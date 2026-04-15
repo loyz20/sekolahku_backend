@@ -1,0 +1,60 @@
+CREATE TABLE IF NOT EXISTS class_subjects (
+    id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+    class_id         INT NOT NULL,
+    subject_id       INT NOT NULL,
+    academic_year_id INT NOT NULL,
+    assigned_by      INT NULL,
+    assigned_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_by         INT NULL,
+    ended_at         TIMESTAMP NULL,
+    is_active        TINYINT(1) AS (CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) STORED,
+    notes            VARCHAR(255) NULL,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_cs_class FOREIGN KEY (class_id) REFERENCES classes(id),
+    CONSTRAINT fk_cs_subject FOREIGN KEY (subject_id) REFERENCES subjects(id),
+    CONSTRAINT fk_cs_academic_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id),
+    CONSTRAINT fk_cs_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id),
+    CONSTRAINT fk_cs_ended_by FOREIGN KEY (ended_by) REFERENCES users(id),
+    UNIQUE KEY uq_cs_active (class_id, subject_id, academic_year_id, is_active),
+    INDEX idx_cs_class_year_active (class_id, academic_year_id, ended_at),
+    INDEX idx_cs_subject_year_active (subject_id, academic_year_id, ended_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS teaching_assignments (
+    id               BIGINT AUTO_INCREMENT PRIMARY KEY,
+    class_subject_id BIGINT NOT NULL,
+    teacher_id       INT NOT NULL,
+    assigned_by      INT NULL,
+    assigned_at      TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_by         INT NULL,
+    ended_at         TIMESTAMP NULL,
+    is_active        TINYINT(1) AS (CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) STORED,
+    notes            VARCHAR(255) NULL,
+    created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ta_class_subject FOREIGN KEY (class_subject_id) REFERENCES class_subjects(id),
+    CONSTRAINT fk_ta_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id),
+    CONSTRAINT fk_ta_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id),
+    CONSTRAINT fk_ta_ended_by FOREIGN KEY (ended_by) REFERENCES users(id),
+    UNIQUE KEY uq_ta_active_class_subject (class_subject_id, is_active),
+    UNIQUE KEY uq_ta_active_teacher_subject (teacher_id, class_subject_id, is_active),
+    INDEX idx_ta_teacher_active (teacher_id, ended_at),
+    INDEX idx_ta_class_subject_active (class_subject_id, ended_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS schedule_slots (
+    id                    BIGINT AUTO_INCREMENT PRIMARY KEY,
+    teaching_assignment_id BIGINT NOT NULL,
+    day_of_week           TINYINT NOT NULL COMMENT '1=Mon ... 7=Sun',
+    start_time            TIME NOT NULL,
+    end_time              TIME NOT NULL,
+    room                  VARCHAR(50) NULL,
+    notes                 VARCHAR(255) NULL,
+    created_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at            TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_ss_teaching_assignment FOREIGN KEY (teaching_assignment_id) REFERENCES teaching_assignments(id),
+    INDEX idx_ss_assignment (teaching_assignment_id),
+    INDEX idx_ss_day_time (day_of_week, start_time, end_time),
+    INDEX idx_ss_room_day_time (room, day_of_week, start_time, end_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

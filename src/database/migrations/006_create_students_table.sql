@@ -1,0 +1,40 @@
+CREATE TABLE IF NOT EXISTS students (
+    id          INT AUTO_INCREMENT PRIMARY KEY,
+    nis         VARCHAR(30) NOT NULL UNIQUE,
+    name        VARCHAR(100) NOT NULL,
+    place_of_birth VARCHAR(100) NULL,
+    date_of_birth  DATE NULL,
+    gender      ENUM('M', 'F') NULL,
+    address     TEXT NULL,
+    parent_phone VARCHAR(20) NULL,
+    email       VARCHAR(255) NULL UNIQUE,
+    user_id     INT NULL,
+    is_active   TINYINT(1) NOT NULL DEFAULT 1,
+    created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_students_user FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX idx_students_nis (nis),
+    INDEX idx_students_name (name),
+    INDEX idx_students_user (user_id),
+    INDEX idx_students_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS student_enrollments (
+    id              BIGINT AUTO_INCREMENT PRIMARY KEY,
+    student_id      INT NOT NULL,
+    class_id        INT NOT NULL,
+    academic_year_id INT NOT NULL,
+    enrollment_date DATETIME DEFAULT CURRENT_TIMESTAMP,
+    ended_date      DATETIME NULL,
+    is_active       TINYINT(1) AS (CASE WHEN ended_date IS NULL THEN 1 ELSE 0 END) STORED,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_se_student FOREIGN KEY (student_id) REFERENCES students(id),
+    CONSTRAINT fk_se_class FOREIGN KEY (class_id) REFERENCES classes(id),
+    CONSTRAINT fk_se_academic_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id),
+    UNIQUE KEY uq_se_active (student_id, class_id, academic_year_id, is_active),
+    INDEX idx_se_student (student_id),
+    INDEX idx_se_class_active (class_id, is_active),
+    INDEX idx_se_ay_active (academic_year_id, is_active),
+    INDEX idx_se_active (student_id, is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

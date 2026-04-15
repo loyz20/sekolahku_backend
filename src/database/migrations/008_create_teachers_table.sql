@@ -1,0 +1,23 @@
+CREATE TABLE IF NOT EXISTS teachers (
+    id              INT AUTO_INCREMENT PRIMARY KEY,
+    nip             VARCHAR(30) NOT NULL UNIQUE,
+    name            VARCHAR(100) NOT NULL,
+    place_of_birth  VARCHAR(100) NULL,
+    date_of_birth   DATE NULL,
+    gender          ENUM('M', 'F') NULL,
+    address         TEXT NULL,
+    phone           VARCHAR(20) NULL,
+    email           VARCHAR(255) NULL UNIQUE,
+    specialization  VARCHAR(255) NULL,
+    qualification   VARCHAR(100) NULL,
+    user_id         INT NULL,
+    is_active       TINYINT(1) NOT NULL DEFAULT 1,
+    created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_teachers_user FOREIGN KEY (user_id) REFERENCES users(id),
+    INDEX idx_teachers_nip (nip),
+    INDEX idx_teachers_name (name),
+    INDEX idx_teachers_email (email),
+    INDEX idx_teachers_user (user_id),
+    INDEX idx_teachers_active (is_active)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
