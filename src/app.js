@@ -9,6 +9,7 @@ const config = require('./config');
 const routes = require('./routes');
 const errorHandler = require('./middlewares/errorHandler');
 const notFoundHandler = require('./middlewares/notFoundHandler');
+const applyAcademicYearContext = require('./middlewares/academicYearContext');
 
 const app = express();
 
@@ -22,7 +23,7 @@ app.use(
     origin: config.cors.origin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Academic-Year-Id'],
   })
 );
 
@@ -48,6 +49,9 @@ app.use(compression());
 if (config.env !== 'test') {
   app.use(morgan('dev'));
 }
+
+// Apply global academic year context from request header for year-scoped CRUD operations.
+app.use(applyAcademicYearContext);
 
 // API routes
 app.use(config.apiPrefix, routes);

@@ -15,6 +15,7 @@ const getAssessmentsValidation = [
   query('search').optional().trim().isLength({ max: 100 }).withMessage('search maximum length is 100 characters'),
   query('nama_penilaian').optional().trim().isLength({ min: 2, max: 100 }).withMessage('nama_penilaian must be between 2 and 100 characters'),
   query('teacher_id').optional().isInt({ min: 1 }).withMessage('teacher_id must be a positive integer').toInt(),
+  query('academic_year_id').optional().isInt({ min: 1 }).withMessage('academic_year_id must be a positive integer').toInt(),
   query('is_active').optional().isBoolean().withMessage('is_active must be boolean'),
 ];
 
@@ -33,6 +34,7 @@ const createAssessmentValidation = [
     .toFloat(),
   body('description').optional({ nullable: true }).trim().isLength({ max: 255 }).withMessage('description maximum length is 255 characters'),
   body('teacher_id').optional().isInt({ min: 1 }).withMessage('teacher_id must be a positive integer').toInt(),
+  body('academic_year_id').optional().isInt({ min: 1 }).withMessage('academic_year_id must be a positive integer').toInt(),
 ];
 
 const updateAssessmentValidation = [

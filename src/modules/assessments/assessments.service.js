@@ -14,7 +14,24 @@ const resolveTeacherIdByUserId = async (userId) => {
   return teacher.id;
 };
 
-const getAssessments = async ({ page = 1, limit = 10, search = '', namaPenilaian = '', isActive, teacherId = '', actor } = {}) => {
+const ensureAcademicYearExists = async (academicYearId) => {
+  const [year] = await db.query('SELECT id, code, name FROM academic_years WHERE id = ? LIMIT 1', [academicYearId]);
+  if (!year) {
+    throw ApiError.badRequest('academic_year_id is invalid');
+  }
+  return year;
+};
+
+const getAssessments = async ({
+  page = 1,
+  limit = 10,
+  search = '',
+  namaPenilaian = '',
+  isActive,
+  teacherId = '',
+  academicYearId = '',
+  actor,
+} = {}) => {
   const offset = (page - 1) * limit;
   const likeSearch = `%${search}%`;
 
@@ -45,6 +62,13 @@ const getAssessments = async ({ page = 1, limit = 10, search = '', namaPenilaian
     countParams.push(Number(effectiveTeacherId));
   }
 
+  if (academicYearId) {
+    await ensureAcademicYearExists(Number(academicYearId));
+    conditions.push('a.academic_year_id = ?');
+    params.push(Number(academicYearId));
+    countParams.push(Number(academicYearId));
+  }
+
   if (typeof isActive === 'boolean') {
     conditions.push('a.is_active = ?');
     params.push(isActive ? 1 : 0);
@@ -55,9 +79,11 @@ const getAssessments = async ({ page = 1, limit = 10, search = '', namaPenilaian
 
   const countSql = `SELECT COUNT(*) AS total FROM assessments a${where}`;
   const dataSql = `
-    SELECT a.id, a.nama_penilaian, a.bobot, a.description, a.is_active, a.created_at,
+        SELECT a.id, a.nama_penilaian, a.bobot, a.description, a.is_active, a.created_at,
+          ay.id AS academic_year_id, ay.code AS academic_year_code, ay.name AS academic_year_name,
            t.id AS teacher_id, t.name AS teacher_name, t.nip AS teacher_nip
     FROM assessments a
+        INNER JOIN academic_years ay ON ay.id = a.academic_year_id
     LEFT JOIN teachers t ON t.id = a.teacher_id
     ${where}
     ORDER BY a.id ASC
@@ -75,6 +101,11 @@ const getAssessments = async ({ page = 1, limit = 10, search = '', namaPenilaian
       description: r.description || null,
       is_active: !!r.is_active,
       created_at: r.created_at,
+      academic_year: {
+        id: r.academic_year_id,
+        code: r.academic_year_code,
+        name: r.academic_year_name,
+      },
       teacher: r.teacher_id
         ? { id: r.teacher_id, name: r.teacher_name, nip: r.teacher_nip || null }
         : null,
@@ -88,11 +119,13 @@ const getAssessments = async ({ page = 1, limit = 10, search = '', namaPenilaian
   };
 };
 
-const getAssessmentById = async (id, actor) => {
+const getAssessmentById = async (id, actor, academicYearId = null) => {
   const rows = await db.query(
     `SELECT a.id, a.nama_penilaian, a.bobot, a.description, a.is_active, a.created_at, a.updated_at,
+            ay.id AS academic_year_id, ay.code AS academic_year_code, ay.name AS academic_year_name,
             t.id AS teacher_id, t.name AS teacher_name, t.nip AS teacher_nip
      FROM assessments a
+     INNER JOIN academic_years ay ON ay.id = a.academic_year_id
      LEFT JOIN teachers t ON t.id = a.teacher_id
      WHERE a.id = ?`,
     [id]
@@ -103,6 +136,11 @@ const getAssessmentById = async (id, actor) => {
   }
 
   const a = rows[0];
+
+  if (academicYearId && Number(a.academic_year_id) !== Number(academicYearId)) {
+    throw ApiError.notFound(`Assessment with id ${id} not found`);
+  }
+
   if (isGuruOnly(actor)) {
     const actorTeacherId = await resolveTeacherIdByUserId(actor.id);
     if (a.teacher_id !== actorTeacherId) {
@@ -118,13 +156,18 @@ const getAssessmentById = async (id, actor) => {
     is_active: !!a.is_active,
     created_at: a.created_at,
     updated_at: a.updated_at,
+    academic_year: {
+      id: a.academic_year_id,
+      code: a.academic_year_code,
+      name: a.academic_year_name,
+    },
     teacher: a.teacher_id
       ? { id: a.teacher_id, name: a.teacher_name, nip: a.teacher_nip || null }
       : null,
   };
 };
 
-const createAssessment = async ({ nama_penilaian, bobot, description = null, teacher_id }, actor) => {
+const createAssessment = async ({ nama_penilaian, bobot, description = null, teacher_id, academic_year_id }, actor) => {
   let teacherId = teacher_id;
   if (isGuruOnly(actor)) {
     teacherId = await resolveTeacherIdByUserId(actor.id);
@@ -134,22 +177,38 @@ const createAssessment = async ({ nama_penilaian, bobot, description = null, tea
     throw ApiError.badRequest('teacher_id is required');
   }
 
-  const existing = await db.query('SELECT id FROM assessments WHERE nama_penilaian = ? AND teacher_id = ?', [nama_penilaian, teacherId]);
+  if (!academic_year_id) {
+    throw ApiError.badRequest('academic_year_id is required');
+  }
+
+  await ensureAcademicYearExists(Number(academic_year_id));
+
+  const existing = await db.query(
+    'SELECT id FROM assessments WHERE nama_penilaian = ? AND teacher_id = ? AND academic_year_id = ?',
+    [nama_penilaian, teacherId, Number(academic_year_id)]
+  );
   if (existing.length) {
-    throw ApiError.conflict(`Assessment "${nama_penilaian}" already exists for this teacher`);
+    throw ApiError.conflict(`Assessment "${nama_penilaian}" already exists for this teacher in selected academic year`);
   }
 
   const result = await db.query(
-    'INSERT INTO assessments (teacher_id, nama_penilaian, bobot, description) VALUES (?, ?, ?, ?)',
-    [teacherId, nama_penilaian, bobot, description || null]
+    'INSERT INTO assessments (teacher_id, academic_year_id, nama_penilaian, bobot, description) VALUES (?, ?, ?, ?, ?)',
+    [teacherId, Number(academic_year_id), nama_penilaian, bobot, description || null]
   );
 
-  return getAssessmentById(result.insertId, actor);
+  return getAssessmentById(result.insertId, actor, Number(academic_year_id));
 };
 
-const updateAssessment = async (id, { nama_penilaian, bobot, description, is_active }, actor) => {
-  const existing = await db.query('SELECT id, teacher_id FROM assessments WHERE id = ?', [id]);
+const updateAssessment = async (id, { nama_penilaian, bobot, description, is_active }, actor, academicYearId = null) => {
+  const existing = await db.query(
+    'SELECT id, teacher_id, academic_year_id FROM assessments WHERE id = ?',
+    [id]
+  );
   if (!existing.length) {
+    throw ApiError.notFound(`Assessment with id ${id} not found`);
+  }
+
+  if (academicYearId && Number(existing[0].academic_year_id) !== Number(academicYearId)) {
     throw ApiError.notFound(`Assessment with id ${id} not found`);
   }
 
@@ -161,9 +220,12 @@ const updateAssessment = async (id, { nama_penilaian, bobot, description, is_act
   }
 
   if (nama_penilaian !== undefined) {
-    const conflict = await db.query('SELECT id FROM assessments WHERE nama_penilaian = ? AND teacher_id = ? AND id != ?', [nama_penilaian, existing[0].teacher_id, id]);
+    const conflict = await db.query(
+      'SELECT id FROM assessments WHERE nama_penilaian = ? AND teacher_id = ? AND academic_year_id = ? AND id != ?',
+      [nama_penilaian, existing[0].teacher_id, existing[0].academic_year_id, id]
+    );
     if (conflict.length) {
-      throw ApiError.conflict(`Assessment "${nama_penilaian}" already exists for this teacher`);
+      throw ApiError.conflict(`Assessment "${nama_penilaian}" already exists for this teacher in selected academic year`);
     }
   }
 
@@ -182,12 +244,16 @@ const updateAssessment = async (id, { nama_penilaian, bobot, description, is_act
   params.push(id);
   await db.query(`UPDATE assessments SET ${sets.join(', ')} WHERE id = ?`, params);
 
-  return getAssessmentById(id, actor);
+  return getAssessmentById(id, actor, academicYearId || existing[0].academic_year_id);
 };
 
-const deleteAssessment = async (id, actor) => {
-  const existing = await db.query('SELECT id, teacher_id FROM assessments WHERE id = ?', [id]);
+const deleteAssessment = async (id, actor, academicYearId = null) => {
+  const existing = await db.query('SELECT id, teacher_id, academic_year_id FROM assessments WHERE id = ?', [id]);
   if (!existing.length) {
+    throw ApiError.notFound(`Assessment with id ${id} not found`);
+  }
+
+  if (academicYearId && Number(existing[0].academic_year_id) !== Number(academicYearId)) {
     throw ApiError.notFound(`Assessment with id ${id} not found`);
   }
 

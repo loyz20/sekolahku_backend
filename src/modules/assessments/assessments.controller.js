@@ -8,6 +8,7 @@ const getAssessments = catchAsync(async (req, res) => {
   const search = req.query.search || '';
   const namaPenilaian = req.query.nama_penilaian || '';
   const teacherId = req.query.teacher_id || '';
+  const academicYearId = req.query.academic_year_id || req.context?.academicYearId || '';
   const isActive = req.query.is_active === undefined
     ? undefined
     : req.query.is_active === 'true' || req.query.is_active === true || req.query.is_active === 1;
@@ -18,6 +19,7 @@ const getAssessments = catchAsync(async (req, res) => {
     search,
     namaPenilaian,
     teacherId,
+    academicYearId,
     isActive,
     actor: req.user,
   });
@@ -30,7 +32,11 @@ const getAssessments = catchAsync(async (req, res) => {
 });
 
 const getAssessmentById = catchAsync(async (req, res) => {
-  const assessment = await assessmentsService.getAssessmentById(parseInt(req.params.id, 10), req.user);
+  const assessment = await assessmentsService.getAssessmentById(
+    parseInt(req.params.id, 10),
+    req.user,
+    req.context?.academicYearId || req.query.academic_year_id
+  );
 
   sendResponse(res, {
     message: 'Assessment fetched successfully',
@@ -39,13 +45,14 @@ const getAssessmentById = catchAsync(async (req, res) => {
 });
 
 const createAssessment = catchAsync(async (req, res) => {
-  const { nama_penilaian, bobot, description, teacher_id } = req.body;
+  const { nama_penilaian, bobot, description, teacher_id, academic_year_id } = req.body;
 
   const assessment = await assessmentsService.createAssessment({
     nama_penilaian,
     bobot,
     description,
     teacher_id,
+    academic_year_id,
   }, req.user);
 
   sendResponse(res, {
@@ -58,12 +65,17 @@ const createAssessment = catchAsync(async (req, res) => {
 const updateAssessment = catchAsync(async (req, res) => {
   const { nama_penilaian, bobot, description, is_active } = req.body;
 
-  const assessment = await assessmentsService.updateAssessment(parseInt(req.params.id, 10), {
-    nama_penilaian,
-    bobot,
-    description,
-    is_active,
-  }, req.user);
+  const assessment = await assessmentsService.updateAssessment(
+    parseInt(req.params.id, 10),
+    {
+      nama_penilaian,
+      bobot,
+      description,
+      is_active,
+    },
+    req.user,
+    req.context?.academicYearId || req.query.academic_year_id
+  );
 
   sendResponse(res, {
     message: 'Assessment updated successfully',
@@ -72,7 +84,11 @@ const updateAssessment = catchAsync(async (req, res) => {
 });
 
 const deleteAssessment = catchAsync(async (req, res) => {
-  await assessmentsService.deleteAssessment(parseInt(req.params.id, 10), req.user);
+  await assessmentsService.deleteAssessment(
+    parseInt(req.params.id, 10),
+    req.user,
+    req.context?.academicYearId || req.query.academic_year_id
+  );
 
   sendResponse(res, {
     message: 'Assessment deleted successfully',

@@ -121,7 +121,9 @@ const importStudents = catchAsync(async (req, res) => {
   }
 
   const classId = req.body.class_id ? parseInt(req.body.class_id, 10) : null;
-  const academicYearId = req.body.academic_year_id ? parseInt(req.body.academic_year_id, 10) : null;
+  const academicYearId = req.body.academic_year_id
+    ? parseInt(req.body.academic_year_id, 10)
+    : req.context?.academicYearId || null;
 
   const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];

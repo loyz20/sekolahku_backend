@@ -11,6 +11,12 @@ const {
 
 const router = express.Router();
 
+router.get(
+  '/public',
+  validate(getAcademicYearsValidation),
+  academicYearsController.getAcademicYearsPublic
+);
+
 router.use(authenticate);
 
 router.get(

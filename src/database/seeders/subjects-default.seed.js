@@ -2,12 +2,126 @@ require('dotenv').config();
 const mysql = require('mysql2/promise');
 
 const DEFAULT_SUBJECTS = [
-  { code: 'MTK', name: 'Matematika', description: 'Mata pelajaran matematika' },
-  { code: 'BIN', name: 'Bahasa Indonesia', description: 'Mata pelajaran bahasa Indonesia' },
-  { code: 'BIG', name: 'Bahasa Inggris', description: 'Mata pelajaran bahasa Inggris' },
-  { code: 'IPA', name: 'Ilmu Pengetahuan Alam', description: 'Mata pelajaran IPA' },
-  { code: 'IPS', name: 'Ilmu Pengetahuan Sosial', description: 'Mata pelajaran IPS' },
-  { code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', description: 'Mata pelajaran PJOK' },
+  {
+    code: 'AGAMA',
+    name: 'Pendidikan Agama dan Budi Pekerti',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'PPKN',
+    name: 'Pendidikan Pancasila dan Kewarganegaraan',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'BINDO',
+    name: 'Bahasa Indonesia',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'MTK',
+    name: 'Matematika',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'SEJIND',
+    name: 'Sejarah Indonesia',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'BING',
+    name: 'Bahasa Inggris',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'SENI',
+    name: 'Seni Budaya',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'PJOK',
+    name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'PKWU',
+    name: 'Prakarya dan Kewirausahaan',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'INF',
+    name: 'Informatika',
+    description: 'Kelompok mata pelajaran umum SMA',
+  },
+  {
+    code: 'MTKMIN',
+    name: 'Matematika Peminatan',
+    description: 'Kelompok mata pelajaran peminatan MIPA SMA',
+  },
+  {
+    code: 'FIS',
+    name: 'Fisika',
+    description: 'Kelompok mata pelajaran peminatan MIPA SMA',
+  },
+  {
+    code: 'KIM',
+    name: 'Kimia',
+    description: 'Kelompok mata pelajaran peminatan MIPA SMA',
+  },
+  {
+    code: 'BIO',
+    name: 'Biologi',
+    description: 'Kelompok mata pelajaran peminatan MIPA SMA',
+  },
+  {
+    code: 'EKO',
+    name: 'Ekonomi',
+    description: 'Kelompok mata pelajaran peminatan IPS SMA',
+  },
+  {
+    code: 'SOS',
+    name: 'Sosiologi',
+    description: 'Kelompok mata pelajaran peminatan IPS SMA',
+  },
+  {
+    code: 'GEO',
+    name: 'Geografi',
+    description: 'Kelompok mata pelajaran peminatan IPS SMA',
+  },
+  {
+    code: 'SEJ',
+    name: 'Sejarah',
+    description: 'Kelompok mata pelajaran peminatan IPS SMA',
+  },
+  {
+    code: 'BBING',
+    name: 'Bahasa dan Sastra Inggris',
+    description: 'Kelompok mata pelajaran peminatan bahasa SMA',
+  },
+  {
+    code: 'BJPG',
+    name: 'Bahasa Jepang',
+    description: 'Kelompok mata pelajaran peminatan bahasa SMA',
+  },
+  {
+    code: 'BMND',
+    name: 'Bahasa Mandarin',
+    description: 'Kelompok mata pelajaran peminatan bahasa SMA',
+  },
+  {
+    code: 'BPRN',
+    name: 'Bahasa Prancis',
+    description: 'Kelompok mata pelajaran peminatan bahasa SMA',
+  },
+  {
+    code: 'BJRM',
+    name: 'Bahasa Jerman',
+    description: 'Kelompok mata pelajaran peminatan bahasa SMA',
+  },
+  {
+    code: 'BARB',
+    name: 'Bahasa Arab',
+    description: 'Kelompok mata pelajaran peminatan bahasa SMA',
+  },
 ];
 
 async function upsertSubject(connection, subject) {

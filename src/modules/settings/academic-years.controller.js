@@ -2,6 +2,20 @@ const catchAsync = require('../../utils/catchAsync');
 const { sendResponse } = require('../../utils/response');
 const academicYearsService = require('./academic-years.service');
 
+const getAcademicYearsPublic = catchAsync(async (req, res) => {
+  const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
+  const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 100, 1), 100);
+  const search = req.query.search || '';
+
+  const result = await academicYearsService.getAcademicYears({ page, limit, search });
+
+  sendResponse(res, {
+    message: 'Academic years fetched successfully',
+    data: result.academic_years,
+    meta: result.meta,
+  });
+});
+
 const getAcademicYears = catchAsync(async (req, res) => {
   const page   = Math.max(parseInt(req.query.page,  10) || 1,   1);
   const limit  = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
@@ -57,6 +71,7 @@ const deleteAcademicYear = catchAsync(async (req, res) => {
 });
 
 module.exports = {
+  getAcademicYearsPublic,
   getAcademicYears,
   getAcademicYearById,
   createAcademicYear,

@@ -213,12 +213,19 @@ const createScore = async ({ student_id, subject_id, assessment_id, academic_yea
     throw ApiError.badRequest('subject_id is invalid');
   }
 
-  const [assessment] = await db.query('SELECT id, teacher_id FROM assessments WHERE id = ? AND is_active = 1', [assessment_id]);
+  const [assessment] = await db.query(
+    'SELECT id, teacher_id, academic_year_id FROM assessments WHERE id = ? AND is_active = 1',
+    [assessment_id]
+  );
   if (!assessment) {
     throw ApiError.badRequest('assessment_id is invalid or inactive');
   }
 
   await ensureAcademicYearExists(academic_year_id);
+
+  if (Number(assessment.academic_year_id) !== Number(academic_year_id)) {
+    throw ApiError.badRequest('assessment_id is not in selected academic year');
+  }
 
   if (isGuruOnly(actor)) {
     const actorTeacherId = await resolveTeacherIdByUserId(actor.id);
