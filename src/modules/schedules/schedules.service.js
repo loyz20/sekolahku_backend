@@ -130,7 +130,7 @@ const ensureTeachingAssignmentActive = async (connection, assignmentId) => {
 };
 
 const ensureSlotExists = async (slotId) => {
-  const rows = await db.query('SELECT id FROM schedule_slots WHERE id = ?', [slotId]);
+  const rows = await db.query('SELECT id FROM schedule_slots WHERE id = ? AND deleted_at IS NULL', [slotId]);
   if (!rows.length) throw ApiError.notFound(`Schedule slot with id ${slotId} not found`);
 };
 
@@ -147,58 +147,87 @@ const checkScheduleConflicts = async (
   const exclusion = excludeSlotId ? ' AND ss.id != ?' : '';
   const overlapPredicate = 'ss.day_of_week = ? AND ss.start_time < ? AND ss.end_time > ?';
 
-  const teacherSql = `
-    SELECT ss.id
-    FROM schedule_slots ss
-    INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
-    INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id AND cs.ended_at IS NULL
-    WHERE ta.teacher_id = ?
-      AND cs.academic_year_id = ?
-      AND ${overlapPredicate}
-      ${exclusion}
-    LIMIT 1
-  `;
+  if (teacherId) {
+    const teacherSql = `
+      SELECT ss.id, ss.start_time, ss.end_time,
+             ss.slot_type, ss.title,
+             s.name AS subject_name
+      FROM schedule_slots ss
+      INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
+      LEFT JOIN class_subjects cs ON cs.id = ss.class_subject_id
+      LEFT JOIN subjects s ON s.id = cs.subject_id
+      WHERE ta.teacher_id = ?
+        AND ss.academic_year_id = ?
+        AND ss.deleted_at IS NULL
+        AND ${overlapPredicate}
+        ${exclusion}
+      LIMIT 1
+    `;
+
+    const teacherParams = [teacherId, academicYearId, dayOfWeek, endTime, startTime];
+    if (excludeSlotId) {
+      teacherParams.push(excludeSlotId);
+    }
+
+    const [teacherConflict] = await connection.execute(teacherSql, teacherParams);
+    if (teacherConflict.length) {
+      const conflict = teacherConflict[0];
+      const conflictLabel =
+        conflict.slot_type === 'lesson'
+          ? conflict.subject_name || 'Pelajaran'
+          : conflict.title || (conflict.slot_type === 'ceremony' ? 'Upacara' : 'Istirahat');
+      throw ApiError.conflict(
+        `Teacher has a time conflict on ${conflict.start_time}-${conflict.end_time} (${conflictLabel})`
+      );
+    }
+  }
 
   const classSql = `
-    SELECT ss.id
+    SELECT ss.id, ss.start_time, ss.end_time,
+           ss.slot_type, ss.title,
+           s.name AS subject_name
     FROM schedule_slots ss
-    INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
-    INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id AND cs.ended_at IS NULL
-    WHERE cs.class_id = ?
-      AND cs.academic_year_id = ?
+    LEFT JOIN class_subjects cs ON cs.id = ss.class_subject_id
+    LEFT JOIN subjects s ON s.id = cs.subject_id
+    WHERE ss.class_id = ?
+      AND ss.academic_year_id = ?
+      AND ss.deleted_at IS NULL
       AND ${overlapPredicate}
       ${exclusion}
     LIMIT 1
   `;
 
   const roomSql = `
-    SELECT ss.id
+    SELECT ss.id, ss.start_time, ss.end_time,
+           ss.slot_type, ss.title,
+           s.name AS subject_name
     FROM schedule_slots ss
-    INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
-    INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id AND cs.ended_at IS NULL
+    LEFT JOIN class_subjects cs ON cs.id = ss.class_subject_id
+    LEFT JOIN subjects s ON s.id = cs.subject_id
     WHERE ss.room = ?
-      AND cs.academic_year_id = ?
+      AND ss.academic_year_id = ?
+      AND ss.deleted_at IS NULL
       AND ${overlapPredicate}
       ${exclusion}
     LIMIT 1
   `;
 
-  const teacherParams = [teacherId, academicYearId, dayOfWeek, endTime, startTime];
   const classParams = [classId, academicYearId, dayOfWeek, endTime, startTime];
 
   if (excludeSlotId) {
-    teacherParams.push(excludeSlotId);
     classParams.push(excludeSlotId);
-  }
-
-  const [teacherConflict] = await connection.execute(teacherSql, teacherParams);
-  if (teacherConflict.length) {
-    throw ApiError.conflict('Teacher has a time conflict on the selected slot');
   }
 
   const [classConflict] = await connection.execute(classSql, classParams);
   if (classConflict.length) {
-    throw ApiError.conflict('Class has a time conflict on the selected slot');
+    const conflict = classConflict[0];
+    const conflictLabel =
+      conflict.slot_type === 'lesson'
+        ? conflict.subject_name || 'Pelajaran'
+        : conflict.title || (conflict.slot_type === 'ceremony' ? 'Upacara' : 'Istirahat');
+    throw ApiError.conflict(
+      `Class has a time conflict on ${conflict.start_time}-${conflict.end_time} (${conflictLabel})`
+    );
   }
 
   if (room) {
@@ -207,11 +236,116 @@ const checkScheduleConflicts = async (
 
     const [roomConflict] = await connection.execute(roomSql, roomParams);
     if (roomConflict.length) {
-      throw ApiError.conflict('Room has a time conflict on the selected slot');
+      const conflict = roomConflict[0];
+      const conflictLabel =
+        conflict.slot_type === 'lesson'
+          ? conflict.subject_name || 'Pelajaran'
+          : conflict.title || (conflict.slot_type === 'ceremony' ? 'Upacara' : 'Istirahat');
+      throw ApiError.conflict(
+        `Room has a time conflict on ${conflict.start_time}-${conflict.end_time} (${conflictLabel})`
+      );
     }
   }
 
   return assignmentId;
+};
+
+const createScheduleSlotInTransaction = async (connection, {
+  classId,
+  academicYearId,
+  slotType = 'lesson',
+  title = null,
+  classSubjectId,
+  teachingAssignmentId = null,
+  dayOfWeek,
+  startTime,
+  endTime,
+  room = null,
+  notes = null,
+}) => {
+  validateTimeRange(startTime, endTime);
+
+  await ensureClassExists(connection, classId);
+  await ensureAcademicYearExists(connection, academicYearId);
+
+  const normalizedSlotType = slotType || 'lesson';
+  let classSubject = null;
+
+  let assignment = null;
+  if (normalizedSlotType === 'lesson') {
+    if (!classSubjectId) {
+      throw ApiError.badRequest('class_subject_id is required for lesson slot');
+    }
+
+    classSubject = await ensureClassSubjectActive(connection, classSubjectId);
+    if (
+      classSubject.class_id !== classId ||
+      classSubject.academic_year_id !== academicYearId
+    ) {
+      throw ApiError.badRequest('class_subject_id does not match class_id or academic_year_id');
+    }
+  }
+
+  if (normalizedSlotType === 'lesson' && teachingAssignmentId) {
+    assignment = await ensureTeachingAssignmentActive(connection, teachingAssignmentId);
+    if (assignment.class_subject_id !== classSubject.id) {
+      throw ApiError.badRequest('teaching_assignment_id does not match class_subject_id');
+    }
+  }
+
+  await checkScheduleConflicts(connection, {
+    assignmentId: teachingAssignmentId,
+    teacherId: assignment ? assignment.teacher_id : null,
+    classId,
+    academicYearId,
+    dayOfWeek,
+    startTime,
+    endTime,
+    room,
+  });
+
+  const [insertResult] = await connection.execute(
+    `INSERT INTO schedule_slots (
+       class_id, academic_year_id, class_subject_id, teaching_assignment_id,
+       slot_type, title, day_of_week, start_time, end_time, room, notes
+     )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      classId,
+      academicYearId,
+      normalizedSlotType === 'lesson' ? classSubjectId : null,
+      normalizedSlotType === 'lesson' ? teachingAssignmentId || null : null,
+      normalizedSlotType,
+      title || null,
+      dayOfWeek,
+      startTime,
+      endTime,
+      room || null,
+      notes || null,
+    ]
+  );
+
+  const [rows] = await connection.execute(
+    `SELECT ss.id, ss.class_subject_id, ss.teaching_assignment_id, ss.slot_type, ss.title,
+            ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
+            cs.id AS class_subject_id,
+            c.id AS class_id, c.code AS class_code, c.name AS class_name,
+            s.id AS subject_id, s.code AS subject_code, s.name AS subject_name,
+            ay.id AS academic_year_id, ay.code AS ay_code, ay.name AS ay_name,
+            ta.id AS assignment_id,
+            t.id AS teacher_id, t.name AS teacher_name, t.nip AS teacher_nip
+     FROM schedule_slots ss
+     INNER JOIN classes c ON c.id = ss.class_id
+     INNER JOIN academic_years ay ON ay.id = ss.academic_year_id
+     LEFT JOIN class_subjects cs ON cs.id = ss.class_subject_id
+     LEFT JOIN subjects s ON s.id = cs.subject_id
+     LEFT JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
+     LEFT JOIN teachers t ON t.id = ta.teacher_id
+     WHERE ss.id = ? AND ss.deleted_at IS NULL`,
+    [insertResult.insertId]
+  );
+
+  return rows[0];
 };
 
 const addClassSubject = async ({ classId, subjectId, academicYearId, actorUserId, notes = null }) => {
@@ -308,6 +442,8 @@ const deleteClassSubjectPermanent = async (classSubjectId) => {
       'SELECT id FROM teaching_assignments WHERE class_subject_id = ?',
       [classSubjectId]
     );
+
+    await connection.execute('DELETE FROM schedule_slots WHERE class_subject_id = ?', [classSubjectId]);
 
     for (const assignment of assignmentRows) {
       await connection.execute('DELETE FROM schedule_slots WHERE teaching_assignment_id = ?', [assignment.id]);
@@ -430,23 +566,11 @@ const revokeTeacherAssignment = async ({ assignmentId, actorUserId, notes = null
       throw ApiError.notFound('Active teaching assignment not found');
     }
 
-    const [slotRows] = await connection.execute(
-      'SELECT id FROM schedule_slots WHERE teaching_assignment_id = ? LIMIT 1',
-      [assignmentId]
-    );
-
     try {
-      if (!slotRows.length) {
-        await connection.execute(
-          `UPDATE teaching_assignments
-           SET ended_at = CURRENT_TIMESTAMP, ended_by = ?, notes = COALESCE(?, notes)
-           WHERE id = ?`,
-          [actorUserId || null, notes, assignmentId]
-        );
-
-        return { assignmentId };
-      }
-
+      await connection.execute(
+        'UPDATE schedule_slots SET teaching_assignment_id = NULL WHERE teaching_assignment_id = ? AND deleted_at IS NULL',
+        [assignmentId]
+      );
       await connection.execute(
         `UPDATE teaching_assignments
          SET ended_at = CURRENT_TIMESTAMP, ended_by = ?, notes = COALESCE(?, notes)
@@ -475,7 +599,10 @@ const deleteTeachingAssignmentPermanent = async (assignmentId) => {
       throw ApiError.notFound('Teaching assignment not found');
     }
 
-    await connection.execute('DELETE FROM schedule_slots WHERE teaching_assignment_id = ?', [assignmentId]);
+    await connection.execute(
+      'UPDATE schedule_slots SET teaching_assignment_id = NULL WHERE teaching_assignment_id = ? AND deleted_at IS NULL',
+      [assignmentId]
+    );
     await connection.execute('DELETE FROM teaching_assignments WHERE id = ?', [assignmentId]);
 
     return { assignmentId };
@@ -538,140 +665,186 @@ const getTeachingAssignments = async ({ classId, academicYearId, teacherId, incl
   }));
 };
 
-const addScheduleSlot = async ({ teachingAssignmentId, dayOfWeek, startTime, endTime, room = null, notes = null }) => {
-  validateTimeRange(startTime, endTime);
-
+const addScheduleSlot = async ({
+  classId,
+  academicYearId,
+  slotType = 'lesson',
+  title = null,
+  classSubjectId,
+  teachingAssignmentId = null,
+  dayOfWeek,
+  startTime,
+  endTime,
+  room = null,
+  notes = null,
+}) => {
   return db.transaction(async (connection) => {
-    const assignment = await ensureTeachingAssignmentActive(connection, teachingAssignmentId);
-
-    await checkScheduleConflicts(connection, {
-      assignmentId: teachingAssignmentId,
-      teacherId: assignment.teacher_id,
-      classId: assignment.class_id,
-      academicYearId: assignment.academic_year_id,
+    return createScheduleSlotInTransaction(connection, {
+      classId,
+      academicYearId,
+      slotType,
+      title,
+      classSubjectId,
+      teachingAssignmentId,
       dayOfWeek,
       startTime,
       endTime,
       room,
+      notes,
     });
-
-    const [insertResult] = await connection.execute(
-      `INSERT INTO schedule_slots (teaching_assignment_id, day_of_week, start_time, end_time, room, notes)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [teachingAssignmentId, dayOfWeek, startTime, endTime, room || null, notes || null]
-    );
-
-    const [rows] = await connection.execute(
-      `SELECT ss.id, ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
-              ta.id AS assignment_id,
-              t.id AS teacher_id, t.name AS teacher_name,
-              c.id AS class_id, c.code AS class_code, c.name AS class_name,
-              s.id AS subject_id, s.code AS subject_code, s.name AS subject_name,
-              ay.id AS academic_year_id, ay.code AS ay_code, ay.name AS ay_name
-       FROM schedule_slots ss
-       INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id
-       INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id
-       INNER JOIN teachers t ON t.id = ta.teacher_id
-       INNER JOIN classes c ON c.id = cs.class_id
-       INNER JOIN subjects s ON s.id = cs.subject_id
-       INNER JOIN academic_years ay ON ay.id = cs.academic_year_id
-       WHERE ss.id = ?`,
-      [insertResult.insertId]
-    );
-
-    return rows[0];
   });
+};
+
+const addScheduleSlotsBatch = async ({ slots }) => {
+  return db.transaction(async (connection) => {
+    const createdSlots = [];
+
+    for (const slot of slots) {
+      const createdSlot = await createScheduleSlotInTransaction(connection, {
+        classId: slot.class_id,
+        academicYearId: slot.academic_year_id,
+        slotType: slot.slot_type || 'lesson',
+        title: slot.title || null,
+        classSubjectId: slot.class_subject_id,
+        teachingAssignmentId: slot.teaching_assignment_id,
+        dayOfWeek: slot.day_of_week,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        room: slot.room,
+        notes: slot.notes,
+      });
+
+      createdSlots.push(createdSlot);
+    }
+
+    return {
+      total: createdSlots.length,
+      slots: createdSlots,
+    };
+  });
+};
+
+const getScheduleSlotByIdInTransaction = async (connection, slotId) => {
+  const [rows] = await connection.execute(
+    `SELECT ss.id, ss.class_subject_id, ss.class_id, ss.academic_year_id,
+            ss.teaching_assignment_id, ss.slot_type, ss.title,
+            ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
+            ta.id AS assignment_id,
+            ta.teacher_id,
+            t.id AS teacher_id_row, t.name AS teacher_name, t.nip AS teacher_nip,
+            c.id AS class_id_row, c.code AS class_code, c.name AS class_name,
+            s.id AS subject_id, s.code AS subject_code, s.name AS subject_name,
+            ay.id AS academic_year_id_row, ay.code AS ay_code, ay.name AS ay_name
+     FROM schedule_slots ss
+     INNER JOIN classes c ON c.id = ss.class_id
+     INNER JOIN academic_years ay ON ay.id = ss.academic_year_id
+     LEFT JOIN class_subjects cs ON cs.id = ss.class_subject_id
+     LEFT JOIN subjects s ON s.id = cs.subject_id
+     LEFT JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
+     LEFT JOIN teachers t ON t.id = ta.teacher_id
+     WHERE ss.id = ? AND ss.deleted_at IS NULL`,
+    [slotId]
+  );
+
+  return rows[0] || null;
+};
+
+const updateScheduleSlotInTransaction = async (connection, slotId, payload) => {
+  const current = await getScheduleSlotByIdInTransaction(connection, slotId);
+
+  if (!current) {
+    throw ApiError.notFound(`Schedule slot with id ${slotId} not found`);
+  }
+
+  const dayOfWeek = payload.dayOfWeek ?? current.day_of_week;
+  const startTime = payload.startTime ?? current.start_time;
+  const endTime = payload.endTime ?? current.end_time;
+  const room = payload.room !== undefined ? payload.room : current.room;
+  const notes = payload.notes !== undefined ? payload.notes : current.notes;
+
+  validateTimeRange(startTime, endTime);
+
+  await checkScheduleConflicts(connection, {
+    assignmentId: current.teaching_assignment_id,
+    teacherId: current.teacher_id || null,
+    classId: current.class_id,
+    academicYearId: current.academic_year_id,
+    dayOfWeek,
+    startTime,
+    endTime,
+    room,
+    excludeSlotId: slotId,
+  });
+
+  await connection.execute(
+    `UPDATE schedule_slots
+     SET day_of_week = ?, start_time = ?, end_time = ?, room = ?, notes = ?
+     WHERE id = ? AND deleted_at IS NULL`,
+    [dayOfWeek, startTime, endTime, room || null, notes || null, slotId]
+  );
+
+  return getScheduleSlotByIdInTransaction(connection, slotId);
 };
 
 const updateScheduleSlot = async (slotId, payload) => {
   await ensureSlotExists(slotId);
 
   return db.transaction(async (connection) => {
-    const [slotRows] = await connection.execute(
-      `SELECT ss.id, ss.teaching_assignment_id, ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
-              ta.teacher_id, cs.class_id, cs.academic_year_id
-       FROM schedule_slots ss
-       INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
-       INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id AND cs.ended_at IS NULL
-       WHERE ss.id = ?`,
-      [slotId]
-    );
-
-    if (!slotRows.length) {
-      throw ApiError.badRequest('Cannot update slot of inactive assignment');
-    }
-
-    const current = slotRows[0];
-
-    const dayOfWeek = payload.dayOfWeek ?? current.day_of_week;
-    const startTime = payload.startTime ?? current.start_time;
-    const endTime = payload.endTime ?? current.end_time;
-    const room = payload.room !== undefined ? payload.room : current.room;
-    const notes = payload.notes !== undefined ? payload.notes : current.notes;
-
-    validateTimeRange(startTime, endTime);
-
-    await checkScheduleConflicts(connection, {
-      assignmentId: current.teaching_assignment_id,
-      teacherId: current.teacher_id,
-      classId: current.class_id,
-      academicYearId: current.academic_year_id,
-      dayOfWeek,
-      startTime,
-      endTime,
-      room,
-      excludeSlotId: slotId,
-    });
-
-    await connection.execute(
-      `UPDATE schedule_slots
-       SET day_of_week = ?, start_time = ?, end_time = ?, room = ?, notes = ?
-       WHERE id = ?`,
-      [dayOfWeek, startTime, endTime, room || null, notes || null, slotId]
-    );
-
-    const [rows] = await connection.execute(
-      `SELECT ss.id, ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
-              ta.id AS assignment_id,
-              t.id AS teacher_id, t.name AS teacher_name,
-              c.id AS class_id, c.code AS class_code, c.name AS class_name,
-              s.id AS subject_id, s.code AS subject_code, s.name AS subject_name,
-              ay.id AS academic_year_id, ay.code AS ay_code, ay.name AS ay_name
-       FROM schedule_slots ss
-       INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id
-       INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id
-       INNER JOIN teachers t ON t.id = ta.teacher_id
-       INNER JOIN classes c ON c.id = cs.class_id
-       INNER JOIN subjects s ON s.id = cs.subject_id
-       INNER JOIN academic_years ay ON ay.id = cs.academic_year_id
-       WHERE ss.id = ?`,
-      [slotId]
-    );
-
-    return rows[0];
+    return updateScheduleSlotInTransaction(connection, slotId, payload);
   });
 };
 
-const deleteScheduleSlot = async (slotId) => {
+const updateScheduleSlotsBatch = async ({ slots }) => {
+  return db.transaction(async (connection) => {
+    const updatedSlots = [];
+
+    for (const slot of slots) {
+      const updatedSlot = await updateScheduleSlotInTransaction(connection, slot.id, {
+        dayOfWeek: slot.day_of_week,
+        startTime: slot.start_time,
+        endTime: slot.end_time,
+        room: slot.room,
+        notes: slot.notes,
+      });
+
+      updatedSlots.push(updatedSlot);
+    }
+
+    return {
+      total: updatedSlots.length,
+      slots: updatedSlots,
+    };
+  });
+};
+
+const deleteScheduleSlot = async (slotId, actorUserId = null) => {
   await ensureSlotExists(slotId);
-  await db.query('DELETE FROM schedule_slots WHERE id = ?', [slotId]);
+  await db.query(
+    `UPDATE schedule_slots
+     SET deleted_at = CURRENT_TIMESTAMP, deleted_by = ?
+     WHERE id = ? AND deleted_at IS NULL`,
+    [actorUserId || null, slotId]
+  );
 };
 
 const getClassSchedule = async ({ classId, academicYearId }) => {
   const rows = await db.query(
-    `SELECT ss.id, ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
+    `SELECT ss.id, ss.class_subject_id, ss.teaching_assignment_id, ss.slot_type, ss.title,
+            ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
             c.id AS class_id, c.code AS class_code, c.name AS class_name,
             ay.id AS academic_year_id, ay.code AS ay_code, ay.name AS ay_name,
             s.id AS subject_id, s.code AS subject_code, s.name AS subject_name,
+            ta.id AS assignment_id,
             t.id AS teacher_id, t.name AS teacher_name, t.nip AS teacher_nip
      FROM schedule_slots ss
-     INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
-     INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id AND cs.ended_at IS NULL
-     INNER JOIN classes c ON c.id = cs.class_id
-     INNER JOIN academic_years ay ON ay.id = cs.academic_year_id
-     INNER JOIN subjects s ON s.id = cs.subject_id
-     INNER JOIN teachers t ON t.id = ta.teacher_id
-     WHERE cs.class_id = ? AND cs.academic_year_id = ?
+     INNER JOIN classes c ON c.id = ss.class_id
+     INNER JOIN academic_years ay ON ay.id = ss.academic_year_id
+     LEFT JOIN class_subjects cs ON cs.id = ss.class_subject_id AND cs.ended_at IS NULL
+     LEFT JOIN subjects s ON s.id = cs.subject_id
+     LEFT JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
+     LEFT JOIN teachers t ON t.id = ta.teacher_id
+     WHERE ss.class_id = ? AND ss.academic_year_id = ?
+      AND ss.deleted_at IS NULL
      ORDER BY ss.day_of_week ASC, ss.start_time ASC`,
     [classId, academicYearId]
   );
@@ -697,28 +870,37 @@ const getClassSchedule = async ({ classId, academicYearId }) => {
     },
     slots: rows.map((row) => ({
       id: row.id,
+      class_subject_id: row.class_subject_id || null,
+      teaching_assignment_id: row.teaching_assignment_id || null,
+      slot_type: row.slot_type || 'lesson',
+      title: row.title || null,
       day_of_week: row.day_of_week,
       start_time: row.start_time,
       end_time: row.end_time,
       room: row.room || null,
       notes: row.notes || null,
-      subject: {
-        id: row.subject_id,
-        code: row.subject_code,
-        name: row.subject_name,
-      },
-      teacher: {
-        id: row.teacher_id,
-        name: row.teacher_name,
-        nip: row.teacher_nip || null,
-      },
+      subject: row.subject_id
+        ? {
+            id: row.subject_id,
+            code: row.subject_code,
+            name: row.subject_name,
+          }
+        : null,
+      teacher: row.teacher_id
+        ? {
+            id: row.teacher_id,
+            name: row.teacher_name,
+            nip: row.teacher_nip || null,
+          }
+        : null,
     })),
   };
 };
 
 const getTeacherSchedule = async ({ teacherId, academicYearId }) => {
   const rows = await db.query(
-    `SELECT ss.id, ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
+    `SELECT ss.id, ss.class_subject_id, ss.teaching_assignment_id, ss.slot_type, ss.title,
+            ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
             t.id AS teacher_id, t.name AS teacher_name, t.nip AS teacher_nip,
             ay.id AS academic_year_id, ay.code AS ay_code, ay.name AS ay_name,
             c.id AS class_id, c.code AS class_code, c.name AS class_name,
@@ -727,10 +909,11 @@ const getTeacherSchedule = async ({ teacherId, academicYearId }) => {
      INNER JOIN teaching_assignments ta ON ta.id = ss.teaching_assignment_id AND ta.ended_at IS NULL
      INNER JOIN class_subjects cs ON cs.id = ta.class_subject_id AND cs.ended_at IS NULL
      INNER JOIN teachers t ON t.id = ta.teacher_id
-     INNER JOIN academic_years ay ON ay.id = cs.academic_year_id
-     INNER JOIN classes c ON c.id = cs.class_id
-     INNER JOIN subjects s ON s.id = cs.subject_id
-     WHERE ta.teacher_id = ? AND cs.academic_year_id = ?
+     INNER JOIN classes c ON c.id = ss.class_id
+     INNER JOIN academic_years ay ON ay.id = ss.academic_year_id
+     LEFT JOIN subjects s ON s.id = cs.subject_id
+     WHERE ta.teacher_id = ? AND ss.academic_year_id = ?
+      AND ss.deleted_at IS NULL
      ORDER BY ss.day_of_week ASC, ss.start_time ASC`,
     [teacherId, academicYearId]
   );
@@ -756,6 +939,10 @@ const getTeacherSchedule = async ({ teacherId, academicYearId }) => {
     },
     slots: rows.map((row) => ({
       id: row.id,
+      class_subject_id: row.class_subject_id || null,
+      teaching_assignment_id: row.teaching_assignment_id || null,
+      slot_type: row.slot_type || 'lesson',
+      title: row.title || null,
       day_of_week: row.day_of_week,
       start_time: row.start_time,
       end_time: row.end_time,
@@ -766,11 +953,13 @@ const getTeacherSchedule = async ({ teacherId, academicYearId }) => {
         code: row.class_code,
         name: row.class_name,
       },
-      subject: {
-        id: row.subject_id,
-        code: row.subject_code,
-        name: row.subject_name,
-      },
+      subject: row.subject_id
+        ? {
+            id: row.subject_id,
+            code: row.subject_code,
+            name: row.subject_name,
+          }
+        : null,
     })),
   };
 };
@@ -781,23 +970,23 @@ const getStudentSchedule = async ({ studentId, academicYearId, requester }) => {
   const academicYear = await ensureAcademicYearExistsByDb(academicYearId);
 
   const rows = await db.query(
-    `SELECT ss.id, ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
+    `SELECT ss.id, ss.class_subject_id, ss.teaching_assignment_id, ss.slot_type, ss.title,
+            ss.day_of_week, ss.start_time, ss.end_time, ss.room, ss.notes,
             c.id AS class_id, c.code AS class_code, c.name AS class_name,
             s.id AS subject_id, s.code AS subject_code, s.name AS subject_name,
             t.id AS teacher_id, t.name AS teacher_name, t.nip AS teacher_nip
      FROM student_enrollments se
-     INNER JOIN class_subjects cs
-       ON cs.class_id = se.class_id
-      AND cs.academic_year_id = se.academic_year_id
-      AND cs.ended_at IS NULL
-     INNER JOIN teaching_assignments ta
-       ON ta.class_subject_id = cs.id
-      AND ta.ended_at IS NULL
+     INNER JOIN classes c ON c.id = se.class_id
      INNER JOIN schedule_slots ss
-       ON ss.teaching_assignment_id = ta.id
-     INNER JOIN classes c ON c.id = cs.class_id
-     INNER JOIN subjects s ON s.id = cs.subject_id
-     INNER JOIN teachers t ON t.id = ta.teacher_id
+       ON ss.class_id = se.class_id
+      AND ss.academic_year_id = se.academic_year_id
+      AND ss.deleted_at IS NULL
+     LEFT JOIN class_subjects cs ON cs.id = ss.class_subject_id AND cs.ended_at IS NULL
+     LEFT JOIN teaching_assignments ta
+       ON ta.id = ss.teaching_assignment_id
+      AND ta.ended_at IS NULL
+     LEFT JOIN teachers t ON t.id = ta.teacher_id
+     LEFT JOIN subjects s ON s.id = cs.subject_id
      WHERE se.student_id = ?
        AND se.academic_year_id = ?
        AND se.ended_date IS NULL
@@ -818,6 +1007,10 @@ const getStudentSchedule = async ({ studentId, academicYearId, requester }) => {
     },
     slots: rows.map((row) => ({
       id: row.id,
+      class_subject_id: row.class_subject_id || null,
+      teaching_assignment_id: row.teaching_assignment_id || null,
+      slot_type: row.slot_type || 'lesson',
+      title: row.title || null,
       day_of_week: row.day_of_week,
       start_time: row.start_time,
       end_time: row.end_time,
@@ -828,16 +1021,20 @@ const getStudentSchedule = async ({ studentId, academicYearId, requester }) => {
         code: row.class_code,
         name: row.class_name,
       },
-      subject: {
-        id: row.subject_id,
-        code: row.subject_code,
-        name: row.subject_name,
-      },
-      teacher: {
-        id: row.teacher_id,
-        name: row.teacher_name,
-        nip: row.teacher_nip || null,
-      },
+      subject: row.subject_id
+        ? {
+            id: row.subject_id,
+            code: row.subject_code,
+            name: row.subject_name,
+          }
+        : null,
+      teacher: row.teacher_id
+        ? {
+            id: row.teacher_id,
+            name: row.teacher_name,
+            nip: row.teacher_nip || null,
+          }
+        : null,
     })),
   };
 };
@@ -852,7 +1049,9 @@ module.exports = {
   deleteTeachingAssignmentPermanent,
   getTeachingAssignments,
   addScheduleSlot,
+  addScheduleSlotsBatch,
   updateScheduleSlot,
+  updateScheduleSlotsBatch,
   deleteScheduleSlot,
   getClassSchedule,
   getTeacherSchedule,

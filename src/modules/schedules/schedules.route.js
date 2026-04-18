@@ -13,8 +13,6 @@ const {
   assignTeacherValidation,
   revokeTeacherAssignmentValidation,
   getTeachingAssignmentsValidation,
-  addSlotValidation,
-  updateSlotValidation,
 } = require('./schedules.validation');
 
 const router = express.Router();
@@ -78,9 +76,5 @@ router.delete(
   validate(idParamValidation),
   schedulesController.deleteTeachingAssignmentPermanent
 );
-
-router.post('/slots', validate(addSlotValidation), schedulesController.addScheduleSlot);
-router.patch('/slots/:id', validate(updateSlotValidation), schedulesController.updateScheduleSlot);
-router.delete('/slots/:id', validate(idParamValidation), schedulesController.deleteScheduleSlot);
 
 module.exports = router;

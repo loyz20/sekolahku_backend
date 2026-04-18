@@ -2,6 +2,8 @@ const db = require('../../config/database');
 const ApiError = require('../../utils/ApiError');
 const bcrypt = require('bcryptjs');
 
+const TEACHER_ACCOUNT_EMAIL_DOMAIN = 'sman3tasikmalaya.sch.id';
+
 /**
  * Get all teachers with pagination and optional filtering
  */
@@ -151,14 +153,12 @@ const createTeacher = async ({
   // Auto-create a login account if user_id is not provided.
   // Default password is set to NIP so admin can share credentials immediately.
   if (!user_id) {
-    let finalEmail = email || `${String(nip).trim()}@sekolahku.local`;
+    const normalizedNip = String(nip).trim();
+    let finalEmail = `${normalizedNip}@${TEACHER_ACCOUNT_EMAIL_DOMAIN}`;
 
     const existingUserEmail = await db.query('SELECT id FROM users WHERE email = ?', [finalEmail]);
     if (existingUserEmail.length) {
-      if (email) {
-        throw ApiError.conflict(`Email "${email}" already exists in users`);
-      }
-      finalEmail = `${String(nip).trim()}.${Date.now()}@sekolahku.local`;
+      finalEmail = `${normalizedNip}.${Date.now()}@${TEACHER_ACCOUNT_EMAIL_DOMAIN}`;
     }
 
     const existingUserNip = await db.query('SELECT id FROM users WHERE nip = ?', [nip]);

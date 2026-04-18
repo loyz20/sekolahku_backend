@@ -114,9 +114,26 @@ const getTeachingAssignments = catchAsync(async (req, res) => {
 });
 
 const addScheduleSlot = catchAsync(async (req, res) => {
-  const { teaching_assignment_id, day_of_week, start_time, end_time, room, notes } = req.body;
+  const {
+    class_id,
+    academic_year_id,
+    slot_type,
+    title,
+    class_subject_id,
+    teaching_assignment_id,
+    day_of_week,
+    start_time,
+    end_time,
+    room,
+    notes,
+  } = req.body;
 
   const result = await schedulesService.addScheduleSlot({
+    classId: class_id,
+    academicYearId: academic_year_id,
+    slotType: slot_type || 'lesson',
+    title,
+    classSubjectId: class_subject_id,
     teachingAssignmentId: teaching_assignment_id,
     dayOfWeek: day_of_week,
     startTime: start_time,
@@ -128,6 +145,20 @@ const addScheduleSlot = catchAsync(async (req, res) => {
   sendResponse(res, {
     statusCode: 201,
     message: 'Schedule slot created successfully',
+    data: result,
+  });
+});
+
+const addScheduleSlotsBatch = catchAsync(async (req, res) => {
+  const slots = req.body.slots || [];
+
+  const result = await schedulesService.addScheduleSlotsBatch({
+    slots,
+  });
+
+  sendResponse(res, {
+    statusCode: 201,
+    message: 'Schedule slots created successfully',
     data: result,
   });
 });
@@ -149,8 +180,21 @@ const updateScheduleSlot = catchAsync(async (req, res) => {
   });
 });
 
+const updateScheduleSlotsBatch = catchAsync(async (req, res) => {
+  const slots = req.body.slots || [];
+
+  const result = await schedulesService.updateScheduleSlotsBatch({
+    slots,
+  });
+
+  sendResponse(res, {
+    message: 'Schedule slots updated successfully',
+    data: result,
+  });
+});
+
 const deleteScheduleSlot = catchAsync(async (req, res) => {
-  await schedulesService.deleteScheduleSlot(parseInt(req.params.id, 10));
+  await schedulesService.deleteScheduleSlot(parseInt(req.params.id, 10), req.user.id);
 
   sendResponse(res, {
     message: 'Schedule slot deleted successfully',
@@ -208,7 +252,9 @@ module.exports = {
   deleteTeachingAssignmentPermanent,
   getTeachingAssignments,
   addScheduleSlot,
+  addScheduleSlotsBatch,
   updateScheduleSlot,
+  updateScheduleSlotsBatch,
   deleteScheduleSlot,
   getClassSchedule,
   getTeacherSchedule,
