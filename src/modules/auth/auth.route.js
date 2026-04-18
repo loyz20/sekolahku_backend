@@ -8,7 +8,7 @@ const router = express.Router();
 
 router.post('/register', validate(registerValidation), register);
 router.post('/login', validate(loginValidation), login);
-router.get('/admin-only', authenticate, authorize('admin'), (req, res) => {
+router.get('/admin-only', authenticate, authorize('admin', 'superadmin'), (req, res) => {
 	res.status(200).json({
 		success: true,
 		message: 'Admin access granted',

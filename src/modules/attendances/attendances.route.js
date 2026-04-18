@@ -3,11 +3,12 @@ const { authenticate, authorize } = require('../../middlewares/auth');
 const validate = require('../../middlewares/validate');
 const attendancesController = require('./attendances.controller');
 const {
-  getMeetingsValidation,
-  meetingIdParamValidation,
-  createMeetingValidation,
-  updateMeetingValidation,
-  upsertMeetingAttendanceValidation,
+  attendanceIdParamValidation,
+  getAttendancesValidation,
+  createAttendanceValidation,
+  updateAttendanceValidation,
+  bulkUpsertAttendancesValidation,
+  attendanceSummaryValidation,
 } = require('./attendances.validation');
 
 const router = express.Router();
@@ -15,45 +16,52 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get(
-  '/meetings',
+  '/',
   authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
-  validate(getMeetingsValidation),
-  attendancesController.getMeetings
+  validate(getAttendancesValidation),
+  attendancesController.getAttendances
 );
 
 router.get(
-  '/meetings/:id',
+  '/summary',
   authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
-  validate(meetingIdParamValidation),
-  attendancesController.getMeetingById
+  validate(attendanceSummaryValidation),
+  attendancesController.getAttendanceSummary
 );
 
 router.post(
-  '/meetings',
+  '/',
   authorize('admin', 'guru', 'superadmin'),
-  validate(createMeetingValidation),
-  attendancesController.createMeeting
+  validate(createAttendanceValidation),
+  attendancesController.createAttendance
+);
+
+router.post(
+  '/bulk-upsert',
+  authorize('admin', 'guru', 'superadmin'),
+  validate(bulkUpsertAttendancesValidation),
+  attendancesController.bulkUpsertAttendances
+);
+
+router.get(
+  '/:id',
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
+  validate(attendanceIdParamValidation),
+  attendancesController.getAttendanceById
 );
 
 router.patch(
-  '/meetings/:id',
+  '/:id',
   authorize('admin', 'guru', 'superadmin'),
-  validate(updateMeetingValidation),
-  attendancesController.updateMeeting
-);
-
-router.put(
-  '/meetings/:id/attendance',
-  authorize('admin', 'guru', 'superadmin'),
-  validate(upsertMeetingAttendanceValidation),
-  attendancesController.upsertMeetingAttendance
+  validate(updateAttendanceValidation),
+  attendancesController.updateAttendance
 );
 
 router.delete(
-  '/meetings/:id',
+  '/:id',
   authorize('admin', 'guru', 'superadmin'),
-  validate(meetingIdParamValidation),
-  attendancesController.deleteMeeting
+  validate(attendanceIdParamValidation),
+  attendancesController.deleteAttendance
 );
 
 module.exports = router;

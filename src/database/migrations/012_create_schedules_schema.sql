@@ -8,6 +8,7 @@ CREATE TABLE IF NOT EXISTS class_subjects (
     ended_by         INT NULL,
     ended_at         TIMESTAMP NULL,
     is_active        TINYINT(1) AS (CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) STORED,
+    active_unique    TINYINT(1) AS (CASE WHEN ended_at IS NULL THEN 1 ELSE NULL END) STORED,
     notes            VARCHAR(255) NULL,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -16,7 +17,7 @@ CREATE TABLE IF NOT EXISTS class_subjects (
     CONSTRAINT fk_cs_academic_year FOREIGN KEY (academic_year_id) REFERENCES academic_years(id),
     CONSTRAINT fk_cs_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id),
     CONSTRAINT fk_cs_ended_by FOREIGN KEY (ended_by) REFERENCES users(id),
-    UNIQUE KEY uq_cs_active (class_id, subject_id, academic_year_id, is_active),
+    UNIQUE KEY uq_cs_active (class_id, subject_id, academic_year_id, active_unique),
     INDEX idx_cs_class_year_active (class_id, academic_year_id, ended_at),
     INDEX idx_cs_subject_year_active (subject_id, academic_year_id, ended_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -30,6 +31,7 @@ CREATE TABLE IF NOT EXISTS teaching_assignments (
     ended_by         INT NULL,
     ended_at         TIMESTAMP NULL,
     is_active        TINYINT(1) AS (CASE WHEN ended_at IS NULL THEN 1 ELSE 0 END) STORED,
+    active_unique    TINYINT(1) AS (CASE WHEN ended_at IS NULL THEN 1 ELSE NULL END) STORED,
     notes            VARCHAR(255) NULL,
     created_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at       TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -37,8 +39,8 @@ CREATE TABLE IF NOT EXISTS teaching_assignments (
     CONSTRAINT fk_ta_teacher FOREIGN KEY (teacher_id) REFERENCES teachers(id),
     CONSTRAINT fk_ta_assigned_by FOREIGN KEY (assigned_by) REFERENCES users(id),
     CONSTRAINT fk_ta_ended_by FOREIGN KEY (ended_by) REFERENCES users(id),
-    UNIQUE KEY uq_ta_active_class_subject (class_subject_id, is_active),
-    UNIQUE KEY uq_ta_active_teacher_subject (teacher_id, class_subject_id, is_active),
+    UNIQUE KEY uq_ta_active_class_subject (class_subject_id, active_unique),
+    UNIQUE KEY uq_ta_active_teacher_subject (teacher_id, class_subject_id, active_unique),
     INDEX idx_ta_teacher_active (teacher_id, ended_at),
     INDEX idx_ta_class_subject_active (class_subject_id, ended_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

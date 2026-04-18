@@ -23,7 +23,31 @@ const getStudents = async ({
       s.name,
       s.email,
       s.is_active,
-      s.created_at
+      s.created_at,
+      (
+        SELECT c.id
+        FROM student_enrollments se2
+        INNER JOIN classes c ON c.id = se2.class_id
+        WHERE se2.student_id = s.id AND se2.ended_date IS NULL
+        ORDER BY se2.enrollment_date DESC, se2.id DESC
+        LIMIT 1
+      ) AS active_class_id,
+      (
+        SELECT c.code
+        FROM student_enrollments se2
+        INNER JOIN classes c ON c.id = se2.class_id
+        WHERE se2.student_id = s.id AND se2.ended_date IS NULL
+        ORDER BY se2.enrollment_date DESC, se2.id DESC
+        LIMIT 1
+      ) AS active_class_code,
+      (
+        SELECT c.name
+        FROM student_enrollments se2
+        INNER JOIN classes c ON c.id = se2.class_id
+        WHERE se2.student_id = s.id AND se2.ended_date IS NULL
+        ORDER BY se2.enrollment_date DESC, se2.id DESC
+        LIMIT 1
+      ) AS active_class_name
     FROM students s
   `;
 
@@ -74,6 +98,14 @@ const getStudents = async ({
       email: r.email || null,
       is_active: !!r.is_active,
       created_at: r.created_at,
+      active_class:
+        r.active_class_id && r.active_class_code && r.active_class_name
+          ? {
+              id: r.active_class_id,
+              code: r.active_class_code,
+              name: r.active_class_name,
+            }
+          : null,
     })),
     meta: {
       total,

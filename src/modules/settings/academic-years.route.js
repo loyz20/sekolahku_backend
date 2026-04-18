@@ -21,7 +21,7 @@ router.use(authenticate);
 
 router.get(
   '/',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(getAcademicYearsValidation),
   academicYearsController.getAcademicYears
 );
@@ -35,7 +35,7 @@ router.post(
 
 router.get(
   '/:id',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(academicYearIdParamValidation),
   academicYearsController.getAcademicYearById
 );
@@ -56,7 +56,7 @@ router.patch(
 
 router.delete(
   '/:id',
-  authorize('superadmin'),
+  authorize('admin', 'superadmin'),
   validate(academicYearIdParamValidation),
   academicYearsController.deleteAcademicYear
 );

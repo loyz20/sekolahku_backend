@@ -1,6 +1,8 @@
 const db = require('../../config/database');
 const ApiError = require('../../utils/ApiError');
 
+const isDuplicateEntryError = (error) => error?.code === 'ER_DUP_ENTRY';
+
 const ensureClassExists = async (connection, classId) => {
   const [rows] = await connection.execute('SELECT id, code, name FROM classes WHERE id = ?', [classId]);
   if (!rows.length) throw ApiError.notFound(`Class with id ${classId} not found`);
@@ -229,11 +231,20 @@ const addClassSubject = async ({ classId, subjectId, academicYearId, actorUserId
       throw ApiError.conflict('Subject is already active for this class and academic year');
     }
 
-    const [insertResult] = await connection.execute(
-      `INSERT INTO class_subjects (class_id, subject_id, academic_year_id, assigned_by, notes)
-       VALUES (?, ?, ?, ?, ?)`,
-      [classId, subjectId, academicYearId, actorUserId || null, notes]
-    );
+    let insertResult;
+
+    try {
+      [insertResult] = await connection.execute(
+        `INSERT INTO class_subjects (class_id, subject_id, academic_year_id, assigned_by, notes)
+         VALUES (?, ?, ?, ?, ?)`,
+        [classId, subjectId, academicYearId, actorUserId || null, notes]
+      );
+    } catch (error) {
+      if (isDuplicateEntryError(error)) {
+        throw ApiError.conflict('Subject is already active for this class and academic year');
+      }
+      throw error;
+    }
 
     const [rows] = await connection.execute(
       `SELECT cs.id, cs.class_id, cs.subject_id, cs.academic_year_id, cs.assigned_at,
@@ -278,6 +289,32 @@ const revokeClassSubject = async ({ classSubjectId, actorUserId, notes = null })
        WHERE id = ?`,
       [actorUserId || null, notes, classSubjectId]
     );
+
+    return { classSubjectId };
+  });
+};
+
+const deleteClassSubjectPermanent = async (classSubjectId) => {
+  return db.transaction(async (connection) => {
+    const [rows] = await connection.execute('SELECT id FROM class_subjects WHERE id = ? LIMIT 1', [
+      classSubjectId,
+    ]);
+
+    if (!rows.length) {
+      throw ApiError.notFound('Class subject not found');
+    }
+
+    const [assignmentRows] = await connection.execute(
+      'SELECT id FROM teaching_assignments WHERE class_subject_id = ?',
+      [classSubjectId]
+    );
+
+    for (const assignment of assignmentRows) {
+      await connection.execute('DELETE FROM schedule_slots WHERE teaching_assignment_id = ?', [assignment.id]);
+    }
+
+    await connection.execute('DELETE FROM teaching_assignments WHERE class_subject_id = ?', [classSubjectId]);
+    await connection.execute('DELETE FROM class_subjects WHERE id = ?', [classSubjectId]);
 
     return { classSubjectId };
   });
@@ -347,11 +384,20 @@ const assignTeacher = async ({ classSubjectId, teacherId, actorUserId, notes = n
       throw ApiError.conflict('Class subject already has an active teacher assignment');
     }
 
-    const [insertResult] = await connection.execute(
-      `INSERT INTO teaching_assignments (class_subject_id, teacher_id, assigned_by, notes)
-       VALUES (?, ?, ?, ?)`,
-      [classSubjectId, teacherId, actorUserId || null, notes]
-    );
+    let insertResult;
+
+    try {
+      [insertResult] = await connection.execute(
+        `INSERT INTO teaching_assignments (class_subject_id, teacher_id, assigned_by, notes)
+         VALUES (?, ?, ?, ?)`,
+        [classSubjectId, teacherId, actorUserId || null, notes]
+      );
+    } catch (error) {
+      if (isDuplicateEntryError(error)) {
+        throw ApiError.conflict('Class subject already has an active teacher assignment');
+      }
+      throw error;
+    }
 
     const [rows] = await connection.execute(
       `SELECT ta.id, ta.class_subject_id, ta.teacher_id, ta.assigned_at,
@@ -389,23 +435,30 @@ const revokeTeacherAssignment = async ({ assignmentId, actorUserId, notes = null
       [assignmentId]
     );
 
-    if (!slotRows.length) {
+    try {
+      if (!slotRows.length) {
+        await connection.execute(
+          `UPDATE teaching_assignments
+           SET ended_at = CURRENT_TIMESTAMP, ended_by = ?, notes = COALESCE(?, notes)
+           WHERE id = ?`,
+          [actorUserId || null, notes, assignmentId]
+        );
+
+        return { assignmentId };
+      }
+
       await connection.execute(
         `UPDATE teaching_assignments
          SET ended_at = CURRENT_TIMESTAMP, ended_by = ?, notes = COALESCE(?, notes)
          WHERE id = ?`,
         [actorUserId || null, notes, assignmentId]
       );
-
-      return { assignmentId };
+    } catch (error) {
+      if (isDuplicateEntryError(error)) {
+        throw ApiError.conflict('Teaching assignment has been revoked before and cannot be revoked again until database migration is applied');
+      }
+      throw error;
     }
-
-    await connection.execute(
-      `UPDATE teaching_assignments
-       SET ended_at = CURRENT_TIMESTAMP, ended_by = ?, notes = COALESCE(?, notes)
-       WHERE id = ?`,
-      [actorUserId || null, notes, assignmentId]
-    );
 
     return { assignmentId };
   });
@@ -792,6 +845,7 @@ const getStudentSchedule = async ({ studentId, academicYearId, requester }) => {
 module.exports = {
   addClassSubject,
   revokeClassSubject,
+  deleteClassSubjectPermanent,
   getClassSubjects,
   assignTeacher,
   revokeTeacherAssignment,

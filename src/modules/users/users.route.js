@@ -27,6 +27,6 @@ router.get('/:id', authorize('admin', 'kepala_sekolah', 'superadmin'), validate(
 router.patch('/:id', authorize('admin', 'superadmin'), validate(updateUserValidation), usersController.updateUser);
 router.patch('/:id/password', authorize('admin', 'superadmin'), validate(changePasswordValidation), usersController.changePassword);
 router.patch('/:id/status', authorize('admin', 'superadmin'), validate(userIdParamValidation), usersController.toggleStatus);
-router.delete('/:id', authorize('superadmin'), validate(userIdParamValidation), usersController.deleteUser);
+router.delete('/:id', authorize('admin', 'superadmin'), validate(userIdParamValidation), usersController.deleteUser);
 
 module.exports = router;

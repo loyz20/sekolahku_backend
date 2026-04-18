@@ -43,7 +43,7 @@ router.patch(
 
 router.delete(
   '/:id',
-  authorize('superadmin'),
+  authorize('admin', 'superadmin'),
   validate(scoreIdParamValidation),
   scoresController.deleteScore
 );

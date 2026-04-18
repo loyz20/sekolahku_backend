@@ -3,6 +3,7 @@ const { sendResponse } = require('../../utils/response');
 const studentsService = require('./students.service');
 const ApiError = require('../../utils/ApiError');
 const xlsx = require('xlsx');
+const db = require('../../config/database');
 
 const getStudents = catchAsync(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
@@ -120,10 +121,29 @@ const importStudents = catchAsync(async (req, res) => {
     throw ApiError.badRequest('File is required');
   }
 
-  const classId = req.body.class_id ? parseInt(req.body.class_id, 10) : null;
-  const academicYearId = req.body.academic_year_id
+  const requestedAcademicYearId = req.body.academic_year_id
     ? parseInt(req.body.academic_year_id, 10)
-    : req.context?.academicYearId || null;
+    : null;
+  const contextAcademicYearId = req.context?.academicYearId || null;
+  const activeAcademicYearRows = await db.query(
+    'SELECT id FROM academic_years WHERE is_active = 1 ORDER BY id DESC LIMIT 1'
+  );
+  const activeAcademicYearId = activeAcademicYearRows[0]?.id || null;
+  const enrollmentAcademicYearId = requestedAcademicYearId || contextAcademicYearId || activeAcademicYearId;
+
+  const classRows = await db.query('SELECT id, code, name FROM classes ORDER BY level ASC, name ASC');
+  const classByCode = new Map();
+  const classByName = new Map();
+  const classByLabel = new Map();
+  classRows.forEach((row) => {
+    const code = String(row.code || '').trim().toUpperCase();
+    const name = String(row.name || '').trim().toUpperCase();
+    const label = `${code} - ${name}`;
+
+    if (code && !classByCode.has(code)) classByCode.set(code, row.id);
+    if (name && !classByName.has(name)) classByName.set(name, row.id);
+    if (label && !classByLabel.has(label)) classByLabel.set(label, row.id);
+  });
 
   const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
   const sheetName = workbook.SheetNames[0];
@@ -169,6 +189,7 @@ const importStudents = catchAsync(async (req, res) => {
       else if (val === 'ALAMAT') colMap.address = idx;
       else if (val.includes('HP') || val.includes('PHONE')) colMap.parent_phone = idx;
       else if (val === 'EMAIL') colMap.email = idx;
+      else if (val === 'KELAS') colMap.kelas = idx;
     });
   }
 
@@ -192,6 +213,7 @@ const importStudents = catchAsync(async (req, res) => {
     const address = row[colMap.address] ? String(row[colMap.address]).trim() : null;
     const parent_phone = row[colMap.parent_phone] ? String(row[colMap.parent_phone]).trim() : null;
     const email = row[colMap.email] ? String(row[colMap.email]).trim() : null;
+    const kelasRaw = row[colMap.kelas] ? String(row[colMap.kelas]).trim() : '';
 
     if (!nis || !name) {
       result.errors.push({ row: i + 1, error: 'Missing required NIS or Nama' });
@@ -211,10 +233,33 @@ const importStudents = catchAsync(async (req, res) => {
       });
       result.created += 1;
 
-      // Enroll if class_id and academic_year_id provided
-      if (classId && academicYearId) {
+      // Enroll if class is provided in template and academic year context exists
+      if (kelasRaw) {
+        const kelasKey = kelasRaw.toUpperCase();
+        const targetClassId =
+          classByLabel.get(kelasKey) ||
+          classByCode.get(kelasKey) ||
+          classByName.get(kelasKey) ||
+          null;
+
+        if (!targetClassId) {
+          result.errors.push({
+            row: i + 1,
+            error: `Created but enrollment skipped: kelas "${kelasRaw}" tidak ditemukan`,
+          });
+          continue;
+        }
+
+        if (!enrollmentAcademicYearId) {
+          result.errors.push({
+            row: i + 1,
+            error: 'Created but enrollment skipped: tahun ajaran aktif tidak ditemukan',
+          });
+          continue;
+        }
+
         try {
-          await studentsService.enrollStudent(student.id, classId, academicYearId);
+          await studentsService.enrollStudent(student.id, targetClassId, enrollmentAcademicYearId);
           result.enrolled += 1;
         } catch (enrollErr) {
           // Enrollment error not critical - student is created, just log as warning
@@ -232,23 +277,67 @@ const importStudents = catchAsync(async (req, res) => {
 });
 
 const getImportTemplate = catchAsync(async (req, res) => {
+  const classes = await db.query('SELECT code, name FROM classes ORDER BY level ASC, name ASC');
+  const defaultClassLabel = classes[0] ? `${classes[0].code} - ${classes[0].name}` : '';
+
   // Create a new workbook
   const worksheet = xlsx.utils.aoa_to_sheet([
     ['TEMPLATE IMPORT SISWA - SEKOLAHKU'],
     ['Baca instruksi di bawah sebelum mengisi data'],
     [],
     ['INSTRUKSI:'],
-    ['1. Isi data siswa mulai dari baris 8 (ROW 8)'],
+    ['1. Isi data siswa mulai dari baris pertama setelah header tabel'],
     ['2. Kolom NIS dan Nama WAJIB diisi, kolom lainnya OPSIONAL'],
     ['3. Format tanggal: YYYY-MM-DD (contoh: 2010-05-15)'],
     ['4. Gender: M (Laki-laki) atau F (Perempuan)'],
-    ['5. Jangan menghapus atau mengubah header di baris 8'],
-    ['6. Jangan tambahkan kolom baru'],
+    ['5. Kolom Kelas opsional, isi dengan "KODE - NAMA" sesuai sheet Pilihan Kelas'],
+    ['6. Jangan menghapus atau mengubah header di baris 8'],
+    ['7. Jangan tambahkan kolom baru'],
     [],
-    ['NIS', 'Nama', 'Tempat Lahir', 'Tanggal Lahir', 'Gender', 'Alamat', 'No HP Orang Tua', 'Email'],
-    ['001', 'Ahmad Rizki', 'Jakarta', '2010-05-15', 'M', 'Jl. Merdeka No. 123', '08123456789', 'ahmad@example.com'],
-    ['002', 'Siti Nurhaliza', 'Bandung', '2011-03-20', 'F', 'Jl. Sudirman No. 456', '08234567890', 'siti@example.com'],
-    ['003', 'Budi Santoso', 'Surabaya', '2010-08-12', 'M', 'Jl. Ahmad Yani No. 789', '08345678901', ''],
+    [
+      'NIS',
+      'Nama',
+      'Tempat Lahir',
+      'Tanggal Lahir',
+      'Gender',
+      'Alamat',
+      'No HP Orang Tua',
+      'Email',
+      'Kelas',
+    ],
+    [
+      '001',
+      'Ahmad Rizki',
+      'Jakarta',
+      '2010-05-15',
+      'M',
+      'Jl. Merdeka No. 123',
+      '08123456789',
+      'ahmad@example.com',
+      defaultClassLabel,
+    ],
+    [
+      '002',
+      'Siti Nurhaliza',
+      'Bandung',
+      '2011-03-20',
+      'F',
+      'Jl. Sudirman No. 456',
+      '08234567890',
+      'siti@example.com',
+      defaultClassLabel,
+    ],
+    [
+      '003',
+      'Budi Santoso',
+      'Surabaya',
+      '2010-08-12',
+      'M',
+      'Jl. Ahmad Yani No. 789',
+      '08345678901',
+      '',
+      '',
+    ],
   ]);
 
   // Set column widths
@@ -261,6 +350,7 @@ const getImportTemplate = catchAsync(async (req, res) => {
     { wch: 25 }, // Alamat
     { wch: 18 }, // No HP Orang Tua
     { wch: 20 }, // Email
+    { wch: 28 }, // Kelas
   ];
 
   // Set row heights for header sections
@@ -275,6 +365,7 @@ const getImportTemplate = catchAsync(async (req, res) => {
     { hpx: 16 },
     { hpx: 16 },
     { hpx: 16 },
+    { hpx: 16 },
     { hpx: 10 }, // Empty
     { hpx: 18 }, // Headers
     { hpx: 16 }, // Example rows
@@ -282,8 +373,23 @@ const getImportTemplate = catchAsync(async (req, res) => {
     { hpx: 16 },
   ];
 
+  const classOptionsSheet = xlsx.utils.aoa_to_sheet([
+    ['PILIHAN KELAS'],
+    ['Isi kolom Kelas di sheet Template Siswa dengan format "KODE - NAMA" dari daftar berikut'],
+    [],
+    ['Kode', 'Nama Kelas', 'Format untuk Kolom Kelas'],
+    ...classes.map((cls) => [cls.code, cls.name, `${cls.code} - ${cls.name}`]),
+  ]);
+
+  classOptionsSheet['!cols'] = [
+    { wch: 14 },
+    { wch: 30 },
+    { wch: 40 },
+  ];
+
   const workbook = xlsx.utils.book_new();
   xlsx.utils.book_append_sheet(workbook, worksheet, 'Template Siswa');
+  xlsx.utils.book_append_sheet(workbook, classOptionsSheet, 'Pilihan Kelas');
 
   // Generate buffer
   const buffer = xlsx.write(workbook, { bookType: 'xlsx', type: 'buffer' });

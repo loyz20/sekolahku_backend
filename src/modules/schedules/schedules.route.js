@@ -43,14 +43,14 @@ router.get(
 
 router.get(
   '/class-subjects',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(getClassSubjectsValidation),
   schedulesController.getClassSubjects
 );
 
 router.get(
   '/teaching-assignments',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(getTeachingAssignmentsValidation),
   schedulesController.getTeachingAssignments
 );
@@ -59,6 +59,12 @@ router.use(authorize('admin', 'superadmin'));
 
 router.post('/class-subjects', validate(addClassSubjectValidation), schedulesController.addClassSubject);
 router.post('/class-subjects/:id/revoke', validate(revokeClassSubjectValidation), schedulesController.revokeClassSubject);
+router.delete(
+  '/class-subjects/:id',
+  authorize('admin', 'superadmin'),
+  validate(idParamValidation),
+  schedulesController.deleteClassSubjectPermanent
+);
 
 router.post('/teaching-assignments', validate(assignTeacherValidation), schedulesController.assignTeacher);
 router.post(
@@ -68,7 +74,7 @@ router.post(
 );
 router.delete(
   '/teaching-assignments/:id',
-  authorize('superadmin'),
+  authorize('admin', 'superadmin'),
   validate(idParamValidation),
   schedulesController.deleteTeachingAssignmentPermanent
 );

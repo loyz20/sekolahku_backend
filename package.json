@@ -11,6 +11,11 @@
     "seed:admin-test": "node src/database/seeders/admin-test.seed.js",
     "seed:teacher-demo": "node src/database/seeders/teacher-demo.seed.js",
     "seed:subjects-default": "node src/database/seeders/subjects-default.seed.js",
+    "seed:class-subjects": "node src/database/seeders/class-subjects.seed.js",
+    "seed:teaching-matrix": "node src/database/seeders/teaching-matrix.seed.js",
+    "seed:teaching-assignments": "node src/database/seeders/teaching-assignments.seed.js",
+    "seed:schedule": "node src/database/seeders/schedule.seed.js",
+    "seed:teachers-subjects": "node src/database/seeders/teachers-subjects.seed.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],

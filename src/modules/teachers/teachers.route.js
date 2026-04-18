@@ -18,7 +18,7 @@ router.use(authenticate);
 // GET /teachers - List all teachers
 router.get(
   '/',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(getTeachersValidation),
   teachersController.getTeachers
 );
@@ -42,14 +42,14 @@ router.post(
 // GET /teachers/import/template/download - Download import template
 router.get(
   '/import/template/download',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   teachersController.getImportTemplate
 );
 
 // GET /teachers/:id - Get teacher detail
 router.get(
   '/:id',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(teacherIdValidation),
   teachersController.getTeacherById
 );
@@ -73,7 +73,7 @@ router.patch(
 // DELETE /teachers/:id - Delete teacher
 router.delete(
   '/:id',
-  authorize('superadmin'),
+  authorize('admin', 'superadmin'),
   validate(teacherIdValidation),
   teachersController.deleteTeacher
 );

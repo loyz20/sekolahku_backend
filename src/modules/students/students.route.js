@@ -18,7 +18,7 @@ router.use(authenticate);
 
 router.get(
   '/',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(getStudentsValidation),
   studentsController.getStudents
 );
@@ -42,13 +42,13 @@ router.post(
 // Download import template
 router.get(
   '/import/template/download',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   studentsController.getImportTemplate
 );
 
 router.get(
   '/:id',
-  authorize('admin', 'kepala_sekolah', 'superadmin'),
+  authorize('admin', 'guru', 'kepala_sekolah', 'superadmin'),
   validate(studentIdParamValidation),
   studentsController.getStudentById
 );
@@ -69,7 +69,7 @@ router.patch(
 
 router.delete(
   '/:id',
-  authorize('superadmin'),
+  authorize('admin', 'superadmin'),
   validate(studentIdParamValidation),
   studentsController.deleteStudent
 );

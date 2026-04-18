@@ -2,96 +2,94 @@ const catchAsync = require('../../utils/catchAsync');
 const { sendResponse } = require('../../utils/response');
 const attendancesService = require('./attendances.service');
 
-const getMeetings = catchAsync(async (req, res) => {
+const getAttendances = catchAsync(async (req, res) => {
   const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
   const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 10, 1), 100);
 
-  const result = await attendancesService.getMeetings({
+  const result = await attendancesService.getAttendances({
     page,
     limit,
-    classId: req.query.class_id || '',
+    studentId: req.query.student_id || '',
     subjectId: req.query.subject_id || '',
-    teacherId: req.query.teacher_id || '',
-    academicYearId: req.query.academic_year_id || '',
-    meetingDate: req.query.meeting_date || '',
+    dateFrom: req.query.date_from || '',
+    dateTo: req.query.date_to || '',
+    status: req.query.status || '',
     actor: req.user,
   });
 
   sendResponse(res, {
-    message: 'Meetings fetched successfully',
-    data: result.meetings,
+    message: 'Attendances fetched successfully',
+    data: result.attendances,
     meta: result.meta,
   });
 });
 
-const getMeetingById = catchAsync(async (req, res) => {
-  const meeting = await attendancesService.getMeetingById(parseInt(req.params.id, 10), req.user);
+const getAttendanceById = catchAsync(async (req, res) => {
+  const attendance = await attendancesService.getAttendanceById(parseInt(req.params.id, 10), req.user);
 
   sendResponse(res, {
-    message: 'Meeting fetched successfully',
-    data: meeting,
+    message: 'Attendance fetched successfully',
+    data: attendance,
   });
 });
 
-const createMeeting = catchAsync(async (req, res) => {
-  const { teaching_assignment_id, meeting_no, meeting_date, topic, notes } = req.body;
-
-  const meeting = await attendancesService.createMeeting({
-    teaching_assignment_id,
-    meeting_no,
-    meeting_date,
-    topic,
-    notes,
-  }, req.user);
+const createAttendance = catchAsync(async (req, res) => {
+  const attendance = await attendancesService.createAttendance(req.body, req.user);
 
   sendResponse(res, {
     statusCode: 201,
-    message: 'Meeting created successfully',
-    data: meeting,
+    message: 'Attendance created successfully',
+    data: attendance,
   });
 });
 
-const updateMeeting = catchAsync(async (req, res) => {
-  const { meeting_no, meeting_date, topic, notes } = req.body;
-
-  const meeting = await attendancesService.updateMeeting(
-    parseInt(req.params.id, 10),
-    { meeting_no, meeting_date, topic, notes },
-    req.user
-  );
+const bulkUpsertAttendances = catchAsync(async (req, res) => {
+  const result = await attendancesService.bulkUpsertAttendances(req.body, req.user);
 
   sendResponse(res, {
-    message: 'Meeting updated successfully',
-    data: meeting,
-  });
-});
-
-const upsertMeetingAttendance = catchAsync(async (req, res) => {
-  const result = await attendancesService.upsertMeetingAttendance(
-    parseInt(req.params.id, 10),
-    req.body.records,
-    req.user
-  );
-
-  sendResponse(res, {
-    message: 'Meeting attendance saved successfully',
+    message: 'Attendances upserted successfully',
     data: result,
   });
 });
 
-const deleteMeeting = catchAsync(async (req, res) => {
-  await attendancesService.deleteMeeting(parseInt(req.params.id, 10), req.user);
+const updateAttendance = catchAsync(async (req, res) => {
+  const attendance = await attendancesService.updateAttendance(parseInt(req.params.id, 10), req.body, req.user);
 
   sendResponse(res, {
-    message: 'Meeting deleted successfully',
+    message: 'Attendance updated successfully',
+    data: attendance,
+  });
+});
+
+const deleteAttendance = catchAsync(async (req, res) => {
+  await attendancesService.deleteAttendance(parseInt(req.params.id, 10), req.user);
+
+  sendResponse(res, {
+    message: 'Attendance deleted successfully',
+  });
+});
+
+const getAttendanceSummary = catchAsync(async (req, res) => {
+  const summary = await attendancesService.getAttendanceSummary({
+    subjectId: req.query.subject_id || '',
+    studentId: req.query.student_id || '',
+    dateFrom: req.query.date_from || '',
+    dateTo: req.query.date_to || '',
+    actor: req.user,
+  });
+
+  sendResponse(res, {
+    message: 'Attendance summary fetched successfully',
+    data: summary,
   });
 });
 
 module.exports = {
-  getMeetings,
-  getMeetingById,
-  createMeeting,
-  updateMeeting,
-  upsertMeetingAttendance,
-  deleteMeeting,
+  getAttendances,
+  getAttendanceById,
+  createAttendance,
+  bulkUpsertAttendances,
+  updateAttendance,
+  deleteAttendance,
+  getAttendanceSummary,
 };

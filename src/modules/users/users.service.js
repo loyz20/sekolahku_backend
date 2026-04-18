@@ -122,6 +122,15 @@ const getUserById = async (id) => {
     [id]
   );
 
+  const [teacher] = await db.query(
+    `SELECT id, nip, name, place_of_birth, date_of_birth, gender, address, phone, email,
+            specialization, qualification, user_id, is_active, created_at, updated_at
+     FROM teachers
+     WHERE user_id = ?
+     LIMIT 1`,
+    [id]
+  );
+
   return {
     id: user.id,
     name: user.name,
@@ -129,6 +138,25 @@ const getUserById = async (id) => {
     email: user.email,
     is_active: !!user.is_active,
     is_protected: !!user.is_protected,
+    teacher: teacher
+      ? {
+          id: teacher.id,
+          nip: teacher.nip,
+          name: teacher.name,
+          place_of_birth: teacher.place_of_birth,
+          date_of_birth: teacher.date_of_birth,
+          gender: teacher.gender,
+          address: teacher.address,
+          phone: teacher.phone,
+          email: teacher.email,
+          specialization: teacher.specialization,
+          qualification: teacher.qualification,
+          user_id: teacher.user_id,
+          is_active: !!teacher.is_active,
+          created_at: teacher.created_at,
+          updated_at: teacher.updated_at,
+        }
+      : null,
     duties,
     homerooms,
     created_at: user.created_at,

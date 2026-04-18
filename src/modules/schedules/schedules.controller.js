@@ -35,6 +35,15 @@ const revokeClassSubject = catchAsync(async (req, res) => {
   });
 });
 
+const deleteClassSubjectPermanent = catchAsync(async (req, res) => {
+  const result = await schedulesService.deleteClassSubjectPermanent(parseInt(req.params.id, 10));
+
+  sendResponse(res, {
+    message: 'Class subject deleted permanently',
+    data: result,
+  });
+});
+
 const getClassSubjects = catchAsync(async (req, res) => {
   const result = await schedulesService.getClassSubjects({
     classId: req.query.class_id || undefined,
@@ -192,6 +201,7 @@ const getStudentSchedule = catchAsync(async (req, res) => {
 module.exports = {
   addClassSubject,
   revokeClassSubject,
+  deleteClassSubjectPermanent,
   getClassSubjects,
   assignTeacher,
   revokeTeacherAssignment,

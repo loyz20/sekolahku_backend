@@ -50,7 +50,7 @@ router.patch(
 
 router.delete(
   '/:id',
-  authorize('superadmin'),
+  authorize('admin', 'superadmin'),
   validate(subjectIdParamValidation),
   subjectsController.deleteSubject
 );

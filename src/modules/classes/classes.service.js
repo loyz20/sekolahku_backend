@@ -3,6 +3,7 @@ const ApiError = require('../../utils/ApiError');
 
 const hasDuty = (actor, duty) => Array.isArray(actor?.duties) && actor.duties.includes(duty);
 const isSuperadmin = (actor) => hasDuty(actor, 'superadmin');
+const isAdminLike = (actor) => isSuperadmin(actor) || hasDuty(actor, 'admin');
 
 const getClasses = async ({ page = 1, limit = 10, search = '', level = '', assignedOnly = false, actor = null } = {}) => {
   const offset = (page - 1) * limit;
@@ -24,7 +25,7 @@ const getClasses = async ({ page = 1, limit = 10, search = '', level = '', assig
     countParams.push(level);
   }
 
-  if (assignedOnly && !isSuperadmin(actor)) {
+  if (assignedOnly && !isAdminLike(actor)) {
     conditions.push(`EXISTS (
       SELECT 1
       FROM homeroom_assignments ha_filter

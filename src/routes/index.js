@@ -12,6 +12,8 @@ const subjectsRoute = require('../modules/subjects/subjects.route');
 const schedulesRoute = require('../modules/schedules/schedules.route');
 const assessmentsRoute = require('../modules/assessments/assessments.route');
 const scoresRoute = require('../modules/scores/scores.route');
+const attendancesRoute = require('../modules/attendances/attendances.route');
+const violationsRoute = require('../modules/violations/violations.route');
 
 const router = express.Router();
 
@@ -28,5 +30,7 @@ router.use('/subjects', subjectsRoute);
 router.use('/schedules', schedulesRoute);
 router.use('/assessments', assessmentsRoute);
 router.use('/scores', scoresRoute);
+router.use('/attendances', attendancesRoute);
+router.use('/violations', violationsRoute);
 
 module.exports = router;
