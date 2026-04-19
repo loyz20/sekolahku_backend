@@ -121,12 +121,13 @@ const getImportTemplate = catchAsync(async (req, res) => {
     ['INSTRUKSI:'],
     ['1. Isi data kelas mulai dari baris setelah header kolom'],
     ['2. Kolom Kode dan Nama WAJIB diisi'],
-    ['3. Kolom Tingkat OPSIONAL (contoh: X, XI, XII)'],
-    ['4. Jangan menghapus atau mengubah nama header kolom'],
+    ['3. Kode kelas gunakan format singkat seperti X.E-1, XI.A-2, XII.B-3'],
+    ['4. Kolom Tingkat OPSIONAL (contoh: X, XI, XII)'],
+    ['5. Jangan menghapus atau mengubah nama header kolom'],
     [],
     ['Kode', 'Nama', 'Tingkat'],
-    ['X-IPA-1', 'Kelas X IPA 1', 'X'],
-    ['XI-IPS-2', 'Kelas XI IPS 2', 'XI'],
+    ['X.E-1', 'Kelas X E 1', 'X'],
+    ['XI.A-2', 'Kelas XI A 2', 'XI'],
   ]);
 
   worksheet['!cols'] = [

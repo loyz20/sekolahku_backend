@@ -44,8 +44,8 @@ const createClassValidation = [
     .trim()
     .isLength({ min: 1, max: 30 })
     .withMessage('code must be between 1 and 30 characters')
-    .matches(/^[A-Za-z0-9_\-]+$/)
-    .withMessage('code may only contain letters, digits, hyphens, and underscores'),
+    .matches(/^[A-Za-z0-9_.\-]+$/)
+    .withMessage('code may only contain letters, digits, dots, hyphens, and underscores'),
   body('name')
     .notEmpty()
     .withMessage('name is required')
@@ -66,8 +66,8 @@ const updateClassValidation = [
     .trim()
     .isLength({ min: 1, max: 30 })
     .withMessage('code must be between 1 and 30 characters')
-    .matches(/^[A-Za-z0-9_\-]+$/)
-    .withMessage('code may only contain letters, digits, hyphens, and underscores'),
+    .matches(/^[A-Za-z0-9_.\-]+$/)
+    .withMessage('code may only contain letters, digits, dots, hyphens, and underscores'),
   body('name')
     .optional()
     .trim()

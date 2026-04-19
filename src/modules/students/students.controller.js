@@ -133,16 +133,10 @@ const importStudents = catchAsync(async (req, res) => {
 
   const classRows = await db.query('SELECT id, code, name FROM classes ORDER BY level ASC, name ASC');
   const classByCode = new Map();
-  const classByName = new Map();
-  const classByLabel = new Map();
   classRows.forEach((row) => {
     const code = String(row.code || '').trim().toUpperCase();
-    const name = String(row.name || '').trim().toUpperCase();
-    const label = `${code} - ${name}`;
 
     if (code && !classByCode.has(code)) classByCode.set(code, row.id);
-    if (name && !classByName.has(name)) classByName.set(name, row.id);
-    if (label && !classByLabel.has(label)) classByLabel.set(label, row.id);
   });
 
   const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
@@ -236,16 +230,12 @@ const importStudents = catchAsync(async (req, res) => {
       // Enroll if class is provided in template and academic year context exists
       if (kelasRaw) {
         const kelasKey = kelasRaw.toUpperCase();
-        const targetClassId =
-          classByLabel.get(kelasKey) ||
-          classByCode.get(kelasKey) ||
-          classByName.get(kelasKey) ||
-          null;
+        const targetClassId = classByCode.get(kelasKey) || null;
 
         if (!targetClassId) {
           result.errors.push({
             row: i + 1,
-            error: `Created but enrollment skipped: kelas "${kelasRaw}" tidak ditemukan`,
+            error: `Created but enrollment skipped: kode kelas "${kelasRaw}" tidak ditemukan`,
           });
           continue;
         }
@@ -278,7 +268,7 @@ const importStudents = catchAsync(async (req, res) => {
 
 const getImportTemplate = catchAsync(async (req, res) => {
   const classes = await db.query('SELECT code, name FROM classes ORDER BY level ASC, name ASC');
-  const defaultClassLabel = classes[0] ? `${classes[0].code} - ${classes[0].name}` : '';
+  const defaultClassCode = classes[0]?.code || '';
 
   // Create a new workbook
   const worksheet = xlsx.utils.aoa_to_sheet([
@@ -290,7 +280,7 @@ const getImportTemplate = catchAsync(async (req, res) => {
     ['2. Kolom NIS dan Nama WAJIB diisi, kolom lainnya OPSIONAL'],
     ['3. Format tanggal: YYYY-MM-DD (contoh: 2010-05-15)'],
     ['4. Gender: M (Laki-laki) atau F (Perempuan)'],
-    ['5. Kolom Kelas opsional, isi dengan "KODE - NAMA" sesuai sheet Pilihan Kelas'],
+    ['5. Kolom Kelas opsional, isi dengan KODE KELAS saja (contoh: X.E-1) sesuai sheet Pilihan Kelas'],
     ['6. Jangan menghapus atau mengubah header di baris 8'],
     ['7. Jangan tambahkan kolom baru'],
     [],
@@ -314,7 +304,7 @@ const getImportTemplate = catchAsync(async (req, res) => {
       'Jl. Merdeka No. 123',
       '08123456789',
       'ahmad@example.com',
-      defaultClassLabel,
+      defaultClassCode,
     ],
     [
       '002',
@@ -325,7 +315,7 @@ const getImportTemplate = catchAsync(async (req, res) => {
       'Jl. Sudirman No. 456',
       '08234567890',
       'siti@example.com',
-      defaultClassLabel,
+      defaultClassCode,
     ],
     [
       '003',
@@ -375,16 +365,15 @@ const getImportTemplate = catchAsync(async (req, res) => {
 
   const classOptionsSheet = xlsx.utils.aoa_to_sheet([
     ['PILIHAN KELAS'],
-    ['Isi kolom Kelas di sheet Template Siswa dengan format "KODE - NAMA" dari daftar berikut'],
+    ['Isi kolom Kelas di sheet Template Siswa dengan KODE KELAS saja dari daftar berikut'],
     [],
-    ['Kode', 'Nama Kelas', 'Format untuk Kolom Kelas'],
-    ...classes.map((cls) => [cls.code, cls.name, `${cls.code} - ${cls.name}`]),
+    ['Kode', 'Nama Kelas'],
+    ...classes.map((cls) => [cls.code, cls.name]),
   ]);
 
   classOptionsSheet['!cols'] = [
     { wch: 14 },
     { wch: 30 },
-    { wch: 40 },
   ];
 
   const workbook = xlsx.utils.book_new();

@@ -96,17 +96,26 @@ const register = async ({ name, nip = null, email, password }) => {
 };
 
 const login = async ({ email, password }) => {
-  const users = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+  // Support login with both email and NIP
+  let users = [];
+  
+  if (email && email.includes('@')) {
+    // Email login
+    users = await db.query('SELECT * FROM users WHERE email = ?', [email]);
+  } else if (email) {
+    // NIP login
+    users = await db.query('SELECT * FROM users WHERE nip = ?', [email]);
+  }
 
   if (!users.length) {
-    throw ApiError.unauthorized('Invalid email or password');
+    throw ApiError.unauthorized('Invalid email/NIP or password');
   }
 
   const user = users[0];
   const isPasswordValid = await bcrypt.compare(password, user.password);
 
   if (!isPasswordValid) {
-    throw ApiError.unauthorized('Invalid email or password');
+    throw ApiError.unauthorized('Invalid email/NIP or password');
   }
 
   const duties = await getUserDuties(user.id);

@@ -28,7 +28,7 @@ const getTeachers = async ({ page = 1, limit = 10, search = '', specialization =
   // Get teachers
   const teachers = await db.query(
     `SELECT id, nip, name, email, specialization, is_active, created_at 
-     FROM teachers 
+     FROM teachers t 
      ${whereClause}
      ORDER BY created_at DESC
      LIMIT ${Number(limit)} OFFSET ${Number(offset)}`,
@@ -37,7 +37,7 @@ const getTeachers = async ({ page = 1, limit = 10, search = '', specialization =
 
   // Get total count
   const [countRow] = await db.query(
-    `SELECT COUNT(*) as total FROM teachers ${whereClause}`,
+    `SELECT COUNT(*) as total FROM teachers t ${whereClause}`,
     params
   );
 
